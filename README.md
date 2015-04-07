@@ -1,4 +1,4 @@
-elastic-beanstalk
+elastic_beanstalk
 =========
 
 Ansible modules for working with Amazon Elastic Beanstalk
