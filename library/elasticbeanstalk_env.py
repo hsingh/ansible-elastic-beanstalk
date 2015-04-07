@@ -18,7 +18,7 @@ def wait_for_health(ebs, app_name, env_name, health, wait_timeout):
     if not health in VALID_BEANSTALK_HEALTHS:
         raise ValueError(health + " is not a valid beanstalk health value")
 
-    timeout_time = time.time() + timeout
+    timeout_time = time.time() + wait_timeout
 
     while 1:
         #print "Waiting for beanstalk %s to turn %s" % (app_name, health)
@@ -62,6 +62,7 @@ def main():
         description = module.params.get('description')
 
     state = module.params.get('state')
+    wait_timeout = module.params.get('wait_timeout')
 
     result = {}
     region, ec2_url, aws_connect_kwargs = get_aws_connection_info(module)
