@@ -95,6 +95,7 @@ def main():
             s3_bucket      = dict(),
             s3_key         = dict(),
             description    = dict(),
+            delete_source  = dict(type='bool',default=False),
             state          = dict(choices=['present','absent','list'], default='present')
         ),
     )
@@ -156,7 +157,7 @@ def main():
         if version is None:
             result = dict(changed=False, output='Version not found')
         else:
-            ebs.delete_application_version(app_name, version_label)
+            ebs.delete_application_version(app_name, version_label, delete_source)
             result = dict(changed=True, version=version)
 
     else:
