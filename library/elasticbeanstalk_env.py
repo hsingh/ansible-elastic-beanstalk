@@ -12,42 +12,92 @@ try:
 except ImportError:
     HAS_BOTO = False
 
-def wait_for_health(ebs, app_name, env_name, health, wait_timeout):
-    VALID_BEANSTALK_HEALTHS = ('Green', 'Yellow', 'Red', 'Grey')
-
-    if not health in VALID_BEANSTALK_HEALTHS:
-        raise ValueError(health + " is not a valid beanstalk health value")
-
+IGNORE_CODE = "Throttling"
+def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
     timeout_time = time.time() + wait_timeout
 
-    while 1:
-        #print "Waiting for beanstalk %s to turn %s" % (app_name, health)
+    while True:
+        try:
+            env = describe_env(ebs, app_name, env_name)
+        except boto.exception.BotoServerError, e:
+            if e.code != IGNORE_CODE:
+                raise e
 
-        result = ebs.describe_environments(application_name=app_name, environment_names=[env_name])
-        current_health = result["DescribeEnvironmentsResponse"]["DescribeEnvironmentsResult"]["Environments"][0]["Health"]
-        #print "Current health is: %s" % current_health
-
-        if current_health == health:
-            #print "Beanstalk %s has turned %s" % (app_name, health)
-            return result
+        if testfunc(env):
+            return env
 
         if time.time() > timeout_time:
             raise ValueError("The timeout has expired")
 
         time.sleep(15)
 
-def filter_terminated(env):
-    return env["Status"] != 'Terminated'
+def health_is_green(env):
+    return env["Health"] == "Green"
+
+def health_is_grey(env):
+    return env["Health"] == "Grey"
+
+def terminated(env):
+    return env["Status"] == "Terminated"
+
+def describe_env(ebs, app_name, env_name):
+    result = ebs.describe_environments(application_name=app_name,
+                                       environment_names=[env_name])
+
+    env = result["DescribeEnvironmentsResponse"]["DescribeEnvironmentsResult"]["Environments"][0]
+    return env
+
+def update_required(ebs, env, params):
+    if env["VersionLabel"] != params["version_label"] or \
+        env["TemplateName"] != params["template_name"]:
+       return True
+
+    result = ebs.describe_configuration_settings(application_name=params["app_name"],
+                                                 environment_name=params["env_name"])
+
+    options = result["DescribeConfigurationSettingsResponse"]["DescribeConfigurationSettingsResult"]["ConfigurationSettings"][0]["OptionSettings"]
+
+    for setting in params["option_settings"]:
+        if new_or_changed_option(options, setting):
+            return True
+
+    return False
+
+def new_or_changed_option(options, setting):
+    for option in options:
+        if option["Namespace"] == setting["Namespace"] and \
+            option["OptionName"] == setting["OptionName"] and \
+            option["Value"] == setting["Value"]:
+            return False
+
+    return True
+
+def boto_exception(err):
+    '''generic error message handler'''
+    if hasattr(err, 'error_message'):
+        error = err.error_message
+    elif hasattr(err, 'message'):
+        error = err.message
+    else:
+        error = '%s: %s' % (Exception, err)
+
+    return error
 
 def main():
     argument_spec = ec2_argument_spec()
     argument_spec.update(dict(
             app_name       = dict(required=True),
             env_name       = dict(required=True),
-            version_label  = dict(required=True),
+            version_label  = dict(),
             description    = dict(),
             state          = dict(choices=['present','absent'], default='present'),
-            wait_timeout   = dict(default=300)
+            wait_timeout   = dict(default=300, type='int'),
+            template_name  = dict(),
+            solution_stack_name = dict(),
+            cname_prefix = dict(),
+            option_settings = dict(type='list',default=[]),
+            options_to_remove = dict(type='list',default=[]),
+            tier_name = dict(default='WebServer', choices=['WebServer','Worker'])
         ),
     )
     module = AnsibleModule(argument_spec=argument_spec)
@@ -55,16 +105,32 @@ def main():
     if not HAS_BOTO:
         module.fail_json(msg='boto required for this module')
 
-    app_name = module.params.get('app_name')
-    env_name = module.params.get('env_name')
-    version_label = module.params.get('version_label')
-    if module.params.get('description'):
-        description = module.params.get('description')
+    app_name = module.params['app_name']
+    env_name = module.params['env_name']
+    version_label = module.params['version_label']
+    description = module.params['description']
+    state = module.params['state']
+    wait_timeout = module.params['wait_timeout']
+    template_name = module.params['template_name']
+    solution_stack_name = module.params['solution_stack_name']
+    cname_prefix = module.params['cname_prefix']
+    option_settings = module.params['option_settings']
+    options_to_remove = module.params['options_to_remove']
 
-    state = module.params.get('state')
-    wait_timeout = module.params.get('wait_timeout')
+    tier_type = 'Standard'
+    tier_name = module.params['tier_name']
 
-    result = {}
+    if tier_name == 'Worker':
+        tier_type = 'SQS/HTTP'
+
+    if solution_stack_name is not None and template_name is not None:
+        if state == 'present':
+            module.fail_json('Cannot specify both "solution_stack_name" and "template_name"')
+
+    option_setting_tups = [(os['Namespace'],os['OptionName'],os['Value']) for os in option_settings]
+    option_to_remove_tups = [(otr['Namespace'],otr['OptionName']) for otr in options_to_remove]
+
+
     region, ec2_url, aws_connect_kwargs = get_aws_connection_info(module)
 
     try:
@@ -76,35 +142,59 @@ def main():
         module.fail_json(msg='Failed to connect to Beanstalk: %s' % str(e))
 
 
-    envs = ebs.describe_environments(app_name, version_label=None, environment_names=[env_name])
-
-    envs = filter(filter_terminated, envs["DescribeEnvironmentsResponse"]["DescribeEnvironmentsResult"]["Environments"])
+    update = False
+    result = {}
 
     if state == 'present':
-        if len(envs) == 1:
-            if envs[0]["VersionLabel"] == version_label:
-                result = dict(changed=False, env=envs[0])
+        try:
+            ebs.create_environment(app_name, env_name, version_label, template_name,
+                              solution_stack_name, cname_prefix, description,
+                              option_setting_tups, None, tier_name,
+                              tier_type, '1.0')
+
+            env = wait_for(ebs, app_name, env_name, wait_timeout, health_is_green)
+            result = dict(changed=True, env=env)
+        except Exception, err:
+            error_msg = boto_exception(err)
+            if 'Environment %s already exists' % env_name in error_msg:
+                update = True
             else:
-                updRequest = ebs.update_environment(environment_name=env_name,
-                                        version_label=version_label)
+                module.fail_json(msg=error_msg)
 
-                wait_for_health(ebs, app_name, env_name, 'Grey', wait_timeout)
-                envs = wait_for_health(ebs, app_name, env_name, 'Green', wait_timeout)
 
-                envs = envs["DescribeEnvironmentsResponse"]["DescribeEnvironmentsResult"]["Environments"]
-                result = dict(changed=True, env=envs[0])
-        else:
-            result = dict(changed=False, output='Environment not found')
-    else:
-        result = dict(changed=False, output='Environment removal not supported')
+    if update:
+        try:
+            env = describe_env(ebs, app_name, env_name)
+            if update_required(ebs, env, module.params):
+                ebs.update_environment(environment_name=env_name,
+                                       version_label=version_label,
+                                       template_name=template_name,
+                                       description=description,
+                                       option_settings=option_setting_tups,
+                                       options_to_remove=None)
 
-    #     if len(envs) == 1:
-    #         ebs.terminate_environment(environment_name=env_name)
-    #         result = dict(changed=True, output='Environment deleted')
-    #         module.exit_json(**result)
-    #     else:
-    #         result = dict(changed=True, output='Environment not found')
-    #         module.exit_json(**result)
+                wait_for(ebs, app_name, env_name, wait_timeout, health_is_grey)
+                env = wait_for(ebs, app_name, env_name, wait_timeout, health_is_green)
+
+                result = dict(changed=True, env=env)
+            else:
+                result = dict(changed=False, env=env)
+
+        except Exception, err:
+            error_msg = boto_exception(err)
+            module.fail_json(msg=error_msg)
+
+    if state == 'absent':
+        try:
+            ebs.terminate_environment(environment_name=env_name)
+            env = wait_for(ebs, app_name, env_name, wait_timeout, terminated)
+            result = dict(changed=True, env=env)
+        except Exception, err:
+            error_msg = boto_exception(err)
+            if 'No Environment found for EnvironmentName = \'%s\'' % env_name in error_msg:
+                result = dict(changed=False, output='Environment not found')
+            else:
+                module.fail_json(msg=error_msg)
 
     module.exit_json(**result)
 
