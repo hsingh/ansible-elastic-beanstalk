@@ -6,7 +6,6 @@ module: elasticbeanstalk_version
 short_description: create, update, delete and list beanstalk application versions
 description:
     - creates, updates, deletes beanstalk versions if both app_name and version_label are provided. Can also list versions associated with application
-version_added: "1.9"
 options:
   app_name:
     description:
@@ -44,7 +43,7 @@ extends_documentation_fragment: aws
 '''
 
 EXAMPLES = '''
-# Create a new application version
+# Create or update an application version
 - elasticbeanstalk_version:
     app_name: Sample App
     version_label: v1.0.0
@@ -59,13 +58,6 @@ EXAMPLES = '''
     version_label: v1.0.0
     state: absent
     region: us-west-2
-
-# Update application version
-- elasticbeanstalk_version:
-    app_name: Sample App
-    version_label: v1.0.1
-    description: Corrected description
-    region: us-east-1
 
 # List application versions
 - elasticbeanstalk_version:

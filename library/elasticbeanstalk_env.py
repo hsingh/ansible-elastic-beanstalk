@@ -3,7 +3,95 @@
 DOCUMENTATION = '''
 ---
 module: elasticbeanstalk_env
-short_description: Ansible module for managing beanstalk environments
+short_description: create, update, delete beanstalk application environments
+description:
+    - creates, updates, deletes beanstalk environments.
+options:
+  app_name:
+    description:
+      - name of the beanstalk application you wish to manage the versions of
+    required: true
+    default: null
+  env_name:
+    description:
+      - unique name for the deployment environment. Must be from 4 to 23 characters in length. The name can contain only letters, numbers, and hyphens. It cannot start or end with a hyphen. This name must be unique in your account.
+    required: true
+    default: null
+  version_label:
+    description:
+      - label of the version you want to deploy in the environment
+    required: false
+    default: null
+  description:
+    description:
+      - describes this environment
+    required: false
+    default: null
+  wait_timeout:
+    description:
+      - Number of seconds to wait for an environment to change state.
+    required: false
+    default: 300
+  template_name:
+    description:
+      - name of the configuration template to use in deployment. You must specify either this parameter or a solution_stack_name
+    required: false
+    default: null
+  solution_stack_name:
+    description:
+      - this is an alternative to specifying a template_name. You must specify either this or a template_name, but not both
+    required: false
+    default: null
+  cname_prefix:
+    description:
+      - if specified, the environment attempts to use this value as the prefix for the CNAME. If not specified, the environment uses the environment name.
+    required: false
+    default: null
+  option_settings:
+    description:
+      - 'A dictionary array of settings to add of the form: { Namespace: ..., OptionName: ... , Value: ... }. If specified, AWS Elastic Beanstalk sets the specified configuration options to the requested value in the configuration set for the new environment. These override the values obtained from the solution stack or the configuration template'
+    required: false
+    default: null
+  tier_name:
+    description:
+      - name of the tier
+    required: false
+    default: WebServer
+    choices: ['WebServer', 'Worker']
+  state:
+    description:
+      - whether to ensure the environment is present or absent
+    required: false
+    default: present
+    choices: ['absent','present']
+author: Harpreet Singh
+extends_documentation_fragment: aws
+'''
+
+EXAMPLES = '''
+# Create or update environment
+- elasticbeanstalk_env:
+    region: us-east-1
+    app_name: Sample App
+    env_name: sampleApp-env
+    version_label: Sample Application
+    solution_stack_name: "64bit Amazon Linux 2014.09 v1.2.1 running Docker 1.5.0"
+    option_settings:
+      - Namespace: aws:elasticbeanstalk:application:environment
+        OptionName: PARAM1
+        Value: bar
+      - Namespace: aws:elasticbeanstalk:application:environment
+        OptionName: PARAM2
+        Value: foobar
+  register: env
+
+# Delete environment
+- elasticbeanstalk_env:
+    app_name: Sample App
+    env_name: sampleApp-env
+    state: absent
+    wait_timeout: 360
+    region: us-west-2
 '''
 
 try:

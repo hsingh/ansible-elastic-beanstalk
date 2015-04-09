@@ -6,7 +6,7 @@ module: elasticbeanstalk_app
 short_description: create, update, delete and list beanstalk application
 description:
     - creates, updates, deletes beanstalk applications if app_name is provided. Can also list applications
-version_added: "1.9"
+
 options:
   app_name:
     description:
@@ -29,7 +29,7 @@ extends_documentation_fragment: aws
 '''
 
 EXAMPLES = '''
-# Create a new application
+# Create or update an application
 - elasticbeanstalk_app:
     app_name: Sample App
     description: Hello World App
@@ -40,12 +40,6 @@ EXAMPLES = '''
     app_name: Sample App
     state: absent
     region: us-west-2
-
-# Update application
-- elasticbeanstalk_app:
-    app_name: Sample App
-    description: Corrected description
-    region: us-east-1
 
 # List application applications
 - elasticbeanstalk_app:

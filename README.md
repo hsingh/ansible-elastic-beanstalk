@@ -28,8 +28,6 @@ The example playbook demonstrates how to create an application and version and u
           state: present
         register: app
 
-      - debug: var=app
-
 
       - name: Create application version
         elasticbeanstalk_version:
@@ -41,18 +39,22 @@ The example playbook demonstrates how to create an application and version and u
           state: present
         register: version
 
-      - debug: var=version
 
-
-      - name: Update environment
+      - name: Create appo
         elasticbeanstalk_env:
           region: us-east-1
           app_name: Sample App
-          env_name: sampleapp-env
-          version_label: Sample Version
+          env_name: sampleApp-env
+          version_label: Sample Application
+          solution_stack_name: "64bit Amazon Linux 2014.09 v1.2.1 running Docker 1.5.0"
+          option_settings:
+            - Namespace: aws:elasticbeanstalk:application:environment
+              OptionName: PARAM1
+              Value: bar
+            - Namespace: aws:elasticbeanstalk:application:environment
+              OptionName: PARAM2
+              Value: foobar
         register: env
-
-      - debug: var=env
 
 
 License
