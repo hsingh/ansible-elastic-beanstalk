@@ -136,9 +136,12 @@ def describe_env(ebs, app_name, env_name):
     return env
 
 def update_required(ebs, env, params):
-    if env["VersionLabel"] != params["version_label"] or \
-        env["TemplateName"] != params["template_name"]:
-       return True
+    updates = []
+    if env["VersionLabel"] != params["version_label"]:
+        updates.append(('VersionLabel', env['VersionLabel'], params['version_label']))
+
+    if env["TemplateName"] != params["template_name"]:
+        updates.append(('TemplateName', env['TemplateName'], params['template_name']))
 
     result = ebs.describe_configuration_settings(application_name=params["app_name"],
                                                  environment_name=params["env_name"])
@@ -146,10 +149,11 @@ def update_required(ebs, env, params):
     options = result["DescribeConfigurationSettingsResponse"]["DescribeConfigurationSettingsResult"]["ConfigurationSettings"][0]["OptionSettings"]
 
     for setting in params["option_settings"]:
-        if new_or_changed_option(options, setting):
-            return True
+        change = new_or_changed_option(options, setting)
+        if change is not None:
+            updates.append(change)
 
-    return False
+    return updates
 
 def new_or_changed_option(options, setting):
     for option in options:
@@ -160,9 +164,11 @@ def new_or_changed_option(options, setting):
                 setting['OptionName'] in ['SecurityGroups', 'ELBSubnets'] and \
                 set(setting['Value'].split(',')).issubset(option['Value'].split(','))) or \
                 option["Value"] == setting["Value"]:
-                return False
+                return None
+            else:
+                return (option["Namespace"] + ':' + option["OptionName"], option["Value"], setting["Value"])
 
-    return True
+    return (setting["Namespace"] + ':' + setting["OptionName"], "<NEW>", setting["Value"])
 
 def boto_exception(err):
     '''generic error message handler'''
@@ -183,7 +189,7 @@ def main():
             version_label  = dict(),
             description    = dict(),
             state          = dict(choices=['present','absent'], default='present'),
-            wait_timeout   = dict(default=300, type='int'),
+            wait_timeout   = dict(default=900, type='int'),
             template_name  = dict(),
             solution_stack_name = dict(),
             cname_prefix = dict(),
@@ -257,7 +263,8 @@ def main():
     if update:
         try:
             env = describe_env(ebs, app_name, env_name)
-            if update_required(ebs, env, module.params):
+            updates = update_required(ebs, env, module.params)
+            if len(updates) > 0:
                 ebs.update_environment(environment_name=env_name,
                                        version_label=version_label,
                                        template_name=template_name,
@@ -268,7 +275,7 @@ def main():
                 wait_for(ebs, app_name, env_name, wait_timeout, health_is_grey)
                 env = wait_for(ebs, app_name, env_name, wait_timeout, health_is_green)
 
-                result = dict(changed=True, env=env)
+                result = dict(changed=True, env=env, updates=updates)
             else:
                 result = dict(changed=False, env=env)
 
