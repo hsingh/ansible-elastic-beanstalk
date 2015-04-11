@@ -31,7 +31,7 @@ options:
     description:
       - Number of seconds to wait for an environment to change state.
     required: false
-    default: 300
+    default: 900
   template_name:
     description:
       - name of the configuration template to use in deployment. You must specify either this parameter or a solution_stack_name
