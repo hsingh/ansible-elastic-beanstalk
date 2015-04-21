@@ -188,7 +188,7 @@ def main():
             env_name       = dict(required=True),
             version_label  = dict(),
             description    = dict(),
-            state          = dict(choices=['present','absent'], default='present'),
+            state          = dict(choices=['present','absent','list'], default='present'),
             wait_timeout   = dict(default=900, type='int'),
             template_name  = dict(),
             solution_stack_name = dict(),
@@ -242,6 +242,14 @@ def main():
 
     update = False
     result = {}
+
+    if state == 'list':
+        try:
+            env = describe_env(ebs, app_name, env_name)
+            result = dict(changed=False, env=env)
+        except Exception, err:
+            error_msg = boto_exception(err)
+            module.fail_json(msg=error_msg)
 
     if state == 'present':
         try:
