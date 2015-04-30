@@ -60,10 +60,11 @@ options:
     choices: ['WebServer', 'Worker']
   state:
     description:
-      - whether to ensure the environment is present or absent
+      - whether to ensure the environment is present or absent, or to list existing environments
     required: false
     default: present
-    choices: ['absent','present']
+    choices: ['absent','present','list']
+
 author: Harpreet Singh
 extends_documentation_fragment: aws
 '''
@@ -132,8 +133,8 @@ def describe_env(ebs, app_name, env_name):
     result = ebs.describe_environments(application_name=app_name,
                                        environment_names=[env_name])
 
-    env = result["DescribeEnvironmentsResponse"]["DescribeEnvironmentsResult"]["Environments"][0]
-    return env
+    envs = result["DescribeEnvironmentsResponse"]["DescribeEnvironmentsResult"]["Environments"]
+    return None if len(envs) != 1 else envs[0]
 
 def update_required(ebs, env, params):
     updates = []
@@ -181,6 +182,28 @@ def boto_exception(err):
 
     return error
 
+def check_env(ebs, app_name, env_name, module):
+    state = module.params['state']
+    env = describe_env(ebs, app_name, env_name)
+
+    result = {}
+
+    if state == 'present' and env is None:
+        result = dict(changed=True, output = "Environment would be created")
+    elif state == 'present' and env is not None:
+        updates = update_required(ebs, env, module.params)
+        if len(updates) > 0:
+            result = dict(changed=True, output = "Environment would be updated", env=env, updates=updates)
+        else:
+            result = dict(changed=False, output="Environment is up-to-date", env=env)
+    elif state == 'absent' and env is None:
+        result = dict(changed=False, output="Environment does not exist")
+    elif state == 'absent' and env is not None:
+        result = dict(changed=True, output="Environment will be deleted", env=env)
+
+    module.exit_json(**result)
+
+
 def main():
     argument_spec = ec2_argument_spec()
     argument_spec.update(dict(
@@ -198,7 +221,9 @@ def main():
             tier_name = dict(default='WebServer', choices=['WebServer','Worker'])
         ),
     )
-    module = AnsibleModule(argument_spec=argument_spec)
+    module = AnsibleModule(argument_spec=argument_spec,
+                           mutually_exclusive=[['solution_stack_name','template_name']],
+                           supports_check_mode=True)
 
     if not HAS_BOTO:
         module.fail_json(msg='boto required for this module')
@@ -220,10 +245,6 @@ def main():
 
     if tier_name == 'Worker':
         tier_type = 'SQS/HTTP'
-
-    if solution_stack_name is not None and template_name is not None:
-        if state == 'present':
-            module.fail_json('Cannot specify both "solution_stack_name" and "template_name"')
 
     option_setting_tups = [(os['Namespace'],os['OptionName'],os['Value']) for os in option_settings]
     option_to_remove_tups = [(otr['Namespace'],otr['OptionName']) for otr in options_to_remove]
@@ -250,6 +271,10 @@ def main():
         except Exception, err:
             error_msg = boto_exception(err)
             module.fail_json(msg=error_msg)
+
+    if module.check_mode and state != 'list':
+        check_env(ebs, app_name, env_name, module)
+        module.fail_json('ASSERTION FAILURE: check_version() should not return control.')
 
     if state == 'present':
         try:
