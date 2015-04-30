@@ -82,9 +82,6 @@ def check_app(ebs, app, module):
         result = dict(changed=False, output="App does not exist")
     elif state == 'absent' and app is not None:
         result = dict(changed=True, output="App will be deleted", app=app)
-    elif state == 'list':
-        apps = list_apps(ebs, app_name)
-        result = dict(changed=False, apps=apps)
 
     module.exit_json(**result)
 
@@ -123,7 +120,7 @@ def main():
 
     app = describe_app(ebs, app_name)
 
-    if module.check_mode:
+    if module.check_mode and state != 'list':
         check_app(ebs, app, module)
         module.fail_json('ASSERTION FAILURE: check_app() should not return control.')
 

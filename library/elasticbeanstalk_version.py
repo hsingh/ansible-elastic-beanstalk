@@ -102,9 +102,6 @@ def check_version(ebs, version, module):
         result = dict(changed=False, output="Version does not exist")
     elif state == 'absent' and version is not None:
         result = dict(changed=True, output="Version will be deleted", version=version)
-    elif state == 'list':
-        versions = list_versions(ebs, app_name, version_label)
-        result = dict(changed=False, versions=versions)
 
     module.exit_json(**result)
 
@@ -159,7 +156,7 @@ def main():
 
     version = describe_version(ebs, app_name, version_label)
 
-    if module.check_mode:
+    if module.check_mode and state != 'list':
         check_version(ebs, version, module)
         module.fail_json('ASSERTION FAILURE: check_version() should not return control.')
 
