@@ -74,10 +74,39 @@ except ImportError:
 
 
 def describe_version(ebs, app_name, version_label):
+    versions = list_versions(ebs, app_name, version_label)
+
+    return None if len(versions) != 1 else versions[0]
+
+def list_versions(ebs, app_name, version_label):
     versions = ebs.describe_application_versions(app_name, version_label)
     versions = versions["DescribeApplicationVersionsResponse"]["DescribeApplicationVersionsResult"]["ApplicationVersions"]
 
-    return None if len(versions) != 1 else versions[0]
+    return versions
+
+def check_version(ebs, version, module):
+    app_name = module.params['app_name']
+    version_label = module.params['version_label']
+    description = module.params['description']
+    state = module.params['state']
+
+    result = {}
+
+    if state == 'present' and version is None:
+        result = dict(changed=True, output = "Version would be created")
+    elif state == 'present' and version["Description"] != description:
+        result = dict(changed=True, output = "Version would be updated", version=version)
+    elif state == 'present' and version["Description"] == description:
+        result = dict(changed=False, output="Version is up-to-date", version=version)
+    elif state == 'absent' and version is None:
+        result = dict(changed=False, output="Version does not exist")
+    elif state == 'absent' and version is not None:
+        result = dict(changed=True, output="Version will be deleted", version=version)
+    elif state == 'list':
+        versions = list_versions(ebs, app_name, version_label)
+        result = dict(changed=False, versions=versions)
+
+    module.exit_json(**result)
 
 def main():
     argument_spec = ec2_argument_spec()
@@ -91,7 +120,7 @@ def main():
             state          = dict(choices=['present','absent','list'], default='present')
         ),
     )
-    module = AnsibleModule(argument_spec=argument_spec)
+    module = AnsibleModule(argument_spec=argument_spec, supports_check_mode=True)
 
     if not HAS_BOTO:
         module.fail_json(msg='boto required for this module')
@@ -130,6 +159,11 @@ def main():
 
     version = describe_version(ebs, app_name, version_label)
 
+    if module.check_mode:
+        check_version(ebs, version, module)
+        module.fail_json('ASSERTION FAILURE: check_version() should not return control.')
+
+
     if state == 'present':
         if version is None:
             create_req = ebs.create_application_version(app_name, version_label, description, s3_bucket, s3_key)
@@ -153,8 +187,7 @@ def main():
             result = dict(changed=True, version=version)
 
     else:
-        versions = ebs.describe_application_versions(app_name, version_label)
-        versions = versions["DescribeApplicationVersionsResponse"]["DescribeApplicationVersionsResult"]["ApplicationVersions"]
+        versions = list_versions(ebs, app_name, version_label)
 
         result = dict(changed=False, versions=versions)
 
