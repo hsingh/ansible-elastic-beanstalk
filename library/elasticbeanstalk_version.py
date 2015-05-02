@@ -184,9 +184,9 @@ def check_version(ebs, version, module):
     result = {}
 
     if state == 'present' and version is None:
-        result = dict(changed=True, output ="Version would be created")
+        result = dict(changed=True, output="Version would be created")
     elif state == 'present' and version["Description"] != description:
-        result = dict(changed=True, output ="Version would be updated", version=version)
+        result = dict(changed=True, output="Version would be updated", version=version)
     elif state == 'present' and version["Description"] == description:
         result = dict(changed=False, output="Version is up-to-date", version=version)
     elif state == 'absent' and version is None:
