@@ -57,6 +57,28 @@ The example playbook demonstrates how to create an application and version and u
         register: env
 
 
+Cleanup Example
+---------------
+
+Example of clean up playbok, which will keep only 20 of last application versions
+
+    ---
+    - hosts: localhost
+      connection: local
+      gather_facts: False
+
+      tasks:
+
+        - name: Remove old EB versions
+          elasticbeanstalk_version:
+            region: us-east-1
+            app_name: Sample App
+            state: cleanup
+            files_to_store: 20
+            delete_source: True
+          register: cleanup
+
+
 License
 -------
 
