@@ -97,6 +97,8 @@ try:
 except ImportError:
     HAS_BOTO = False
 
+# Set some constants
+SECONDS_IN_DAY=86400
 
 def describe_version(ebs, app_name, version_label):
     versions = list_versions(ebs, app_name, version_label)
@@ -130,19 +132,21 @@ def remove_versions(ebs, app_name, list_to_remove, delete_source):
     return True
 
 def get_cleanup_versions_by_date(versions, deployed_versions, days_to_store):
-    targetTime = time.time()-(86400*days_to_store)
-    delete_list_days = []
+    target_time = time.time()-(SECONDS_IN_DAY*days_to_store)
+    delete_list = []
     for version in versions:
-        if version["DateUpdated"] < targetTime and version["VersionLabel"] not in deployed_versions:
-            delete_list_days.append(version)
-    return None if len(delete_list_days) == 0 else delete_list_days
+        if version["DateUpdated"] < target_time and version["VersionLabel"] not in deployed_versions:
+            delete_list.append(version)
+
+    return None if len(delete_list) == 0 else delete_list
 
 def get_cleanup_versions_by_files(versions, deployed_versions, files_to_store):
-    delete_list_count = []
+    delete_list = []
     for index, version in enumerate(versions):
         if index > (files_to_store-1) and version["VersionLabel"] not in deployed_versions:
-            delete_list_count.append(version)
-    return None if len(delete_list_count) == 0 else delete_list_count
+            delete_list.append(version)
+
+    return None if len(delete_list_count) == 0 else delete_list
 
 def get_deployed_versions_by_app(ebs, app_name):
     envs = ebs.describe_environments(app_name)
