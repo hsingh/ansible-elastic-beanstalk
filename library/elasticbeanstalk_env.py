@@ -130,11 +130,17 @@ def terminated(env):
     return env["Status"] == "Terminated"
 
 def describe_env(ebs, app_name, env_name):
-    result = ebs.describe_environments(application_name=app_name,
-                                       environment_names=[env_name])
-
+    environment_names = [env_name] if env_name is not None else None
+    
+    result = ebs.describe_environments(application_name=app_name, environment_names=environment_names)
     envs = result["DescribeEnvironmentsResponse"]["DescribeEnvironmentsResult"]["Environments"]
-    return None if len(envs) != 1 else envs[0]
+
+    if len(envs) > 1:
+        return envs
+    if len(envs) == 1:
+        return envs[0]
+    else:
+        return None
 
 def update_required(ebs, env, params):
     updates = []
@@ -208,7 +214,7 @@ def main():
     argument_spec = ec2_argument_spec()
     argument_spec.update(dict(
             app_name       = dict(required=True),
-            env_name       = dict(required=True),
+            env_name       = dict(),
             version_label  = dict(),
             description    = dict(),
             state          = dict(choices=['present','absent','list'], default='present'),

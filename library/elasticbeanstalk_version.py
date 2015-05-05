@@ -126,6 +126,7 @@ def main():
     version_label = module.params['version_label']
     description = module.params['description']
     state = module.params['state']
+    delete_source = module.params['delete_source']
 
     if version_label is None:
         if state != 'list':
