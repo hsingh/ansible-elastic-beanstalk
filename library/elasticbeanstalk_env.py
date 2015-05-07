@@ -131,7 +131,7 @@ def terminated(env):
 
 def describe_env(ebs, app_name, env_name):
     environment_names = [env_name] if env_name is not None else None
-    
+
     result = ebs.describe_environments(application_name=app_name, environment_names=environment_names)
     envs = result["DescribeEnvironmentsResponse"]["DescribeEnvironmentsResult"]["Environments"]
 
@@ -144,7 +144,7 @@ def describe_env(ebs, app_name, env_name):
 
 def update_required(ebs, env, params):
     updates = []
-    if env["VersionLabel"] != params["version_label"]:
+    if params["version_label"] and env["VersionLabel"] != params["version_label"]:
         updates.append(('VersionLabel', env['VersionLabel'], params['version_label']))
 
     if env["TemplateName"] != params["template_name"]:
