@@ -136,7 +136,10 @@ def describe_env(ebs, app_name, env_name):
     envs = result["DescribeEnvironmentsResponse"]["DescribeEnvironmentsResult"]["Environments"]
 
     if len(envs) > 1:
-        return envs
+        for env in envs:
+            if env['Status'] != “Terminated":
+                return env
+        return None
     if len(envs) == 1:
         return envs[0]
     else:
