@@ -137,7 +137,7 @@ def describe_env(ebs, app_name, env_name):
 
     if len(envs) > 1:
         for env in envs:
-            if env['Status'] != “Terminated":
+            if env['Status'] != "Terminated":
                 return env
         return None
     if len(envs) == 1:
