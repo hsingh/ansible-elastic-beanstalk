@@ -135,15 +135,15 @@ def describe_env(ebs, app_name, env_name):
     result = ebs.describe_environments(application_name=app_name, environment_names=environment_names)
     envs = result["DescribeEnvironmentsResponse"]["DescribeEnvironmentsResult"]["Environments"]
 
-    if len(envs) > 1:
-        for env in envs:
-            if env['Status'] != "Terminated":
-                return env
-        return None
-    if len(envs) == 1:
-        return envs[0]
-    else:
-        return None
+    if not isinstance(envs, list): return None
+
+    for env in envs:
+        if env.has_key("Status") and env["Status"] in ["Terminated","Terminating"]:
+            envs.remove(env)
+
+    if len(envs) == 0: return None
+
+    return envs if env_name is None else envs[0]
 
 def update_required(ebs, env, params):
     updates = []
