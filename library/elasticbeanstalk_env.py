@@ -120,6 +120,9 @@ def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
 
         time.sleep(15)
 
+def status_is_ready(env):
+    return env["Status"] == "Ready"
+
 def health_is_green(env):
     return env["Health"] == "Green"
 
@@ -292,7 +295,7 @@ def main():
                               option_setting_tups, None, tier_name,
                               tier_type, '1.0')
 
-            env = wait_for(ebs, app_name, env_name, wait_timeout, health_is_green)
+            env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
             result = dict(changed=True, env=env)
         except Exception, err:
             error_msg = boto_exception(err)
@@ -315,7 +318,7 @@ def main():
                                        options_to_remove=None)
 
                 wait_for(ebs, app_name, env_name, wait_timeout, health_is_grey)
-                env = wait_for(ebs, app_name, env_name, wait_timeout, health_is_green)
+                env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
 
                 result = dict(changed=True, env=env, updates=updates)
             else:
