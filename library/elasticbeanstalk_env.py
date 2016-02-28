@@ -63,7 +63,7 @@ options:
       - whether to ensure the environment is present or absent, or to list existing environments
     required: false
     default: present
-    choices: ['absent','present','list']
+    choices: ['absent','present','list','details']
 
 author: Harpreet Singh
 extends_documentation_fragment: aws
@@ -120,6 +120,9 @@ def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
 
         time.sleep(15)
 
+def status_is_ready(env):
+    return env["Status"] == "Ready"
+
 def health_is_green(env):
     return env["Health"] == "Green"
 
@@ -134,6 +137,20 @@ def describe_env(ebs, app_name, env_name):
 
     result = ebs.describe_environments(application_name=app_name, environment_names=environment_names)
     envs = result["DescribeEnvironmentsResponse"]["DescribeEnvironmentsResult"]["Environments"]
+
+    if not isinstance(envs, list): return None
+
+    for env in envs:
+        if env.has_key("Status") and env["Status"] in ["Terminated","Terminating"]:
+            envs.remove(env)
+
+    if len(envs) == 0: return None
+
+    return envs if env_name is None else envs[0]
+
+def describe_env_config_settings(ebs, app_name, env_name):
+    result = ebs.describe_configuration_settings(application_name=app_name, environment_name=env_name)
+    envs = result["DescribeConfigurationSettingsResponse"]["DescribeConfigurationSettingsResult"]["ConfigurationSettings"]
 
     if not isinstance(envs, list): return None
 
@@ -172,7 +189,7 @@ def new_or_changed_option(options, setting):
 
             if (setting['Namespace'] in ['aws:autoscaling:launchconfiguration','aws:ec2:vpc'] and \
                 setting['OptionName'] in ['SecurityGroups', 'ELBSubnets', 'Subnets'] and \
-                set(setting['Value'].split(',')).issubset(option['Value'].split(','))) or \
+                set(setting['Value'].split(',')).issubset(setting['Value'].split(','))) or \
                 option["Value"] == setting["Value"]:
                 return None
             else:
@@ -220,7 +237,7 @@ def main():
             env_name       = dict(),
             version_label  = dict(),
             description    = dict(),
-            state          = dict(choices=['present','absent','list'], default='present'),
+            state          = dict(choices=['present','absent','list','details'], default='present'),
             wait_timeout   = dict(default=900, type='int'),
             template_name  = dict(),
             solution_stack_name = dict(),
@@ -281,7 +298,15 @@ def main():
             error_msg = boto_exception(err)
             module.fail_json(msg=error_msg)
 
-    if module.check_mode and state != 'list':
+    if state == 'details':
+        try:
+            env = describe_env_config_settings(ebs, app_name, env_name)
+            result = dict(changed=False, env=env)
+        except Exception, err:
+            error_msg = boto_exception(err)
+            module.fail_json(msg=error_msg)
+
+    if module.check_mode and (state != 'list' or state != 'details'):
         check_env(ebs, app_name, env_name, module)
         module.fail_json('ASSERTION FAILURE: check_version() should not return control.')
 
@@ -292,7 +317,7 @@ def main():
                               option_setting_tups, None, tier_name,
                               tier_type, '1.0')
 
-            env = wait_for(ebs, app_name, env_name, wait_timeout, health_is_green)
+            env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
             result = dict(changed=True, env=env)
         except Exception, err:
             error_msg = boto_exception(err)
@@ -315,7 +340,7 @@ def main():
                                        options_to_remove=None)
 
                 wait_for(ebs, app_name, env_name, wait_timeout, health_is_grey)
-                env = wait_for(ebs, app_name, env_name, wait_timeout, health_is_green)
+                env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
 
                 result = dict(changed=True, env=env, updates=updates)
             else:
