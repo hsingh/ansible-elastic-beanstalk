@@ -120,6 +120,9 @@ def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
 
         time.sleep(15)
 
+def version_is_updated(version_label, env):
+    return env["VersionLabel"] == version_label
+
 def status_is_ready(env):
     return env["Status"] == "Ready"
 
@@ -339,8 +342,7 @@ def main():
                                        option_settings=option_setting_tups,
                                        options_to_remove=None)
 
-                wait_for(ebs, app_name, env_name, wait_timeout, health_is_grey)
-                env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
+                env = wait_for(ebs, app_name, env_name, wait_timeout, lambda environment: status_is_ready(environment) and version_is_updated(version_label, environment))
 
                 result = dict(changed=True, env=env, updates=updates)
             else:
