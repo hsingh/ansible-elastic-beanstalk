@@ -52,6 +52,11 @@ options:
       - 'A dictionary array of settings to add of the form: { Namespace: ..., OptionName: ... , Value: ... }. If specified, AWS Elastic Beanstalk sets the specified configuration options to the requested value in the configuration set for the new environment. These override the values obtained from the solution stack or the configuration template'
     required: false
     default: null
+  tags:
+    description:
+      - A dictionary of Key/Value tags to apply to the environment on creation. Tags cannot be modified once the environment is created.
+    required: false
+    default: null
   tier_name:
     description:
       - name of the tier
@@ -84,6 +89,8 @@ EXAMPLES = '''
       - Namespace: aws:elasticbeanstalk:application:environment
         OptionName: PARAM2
         Value: foobar
+    tags:
+      Name: Sample App
   register: env
 
 # Delete environment
@@ -248,6 +255,7 @@ def main():
             solution_stack_name = dict(),
             cname_prefix = dict(),
             option_settings = dict(type='list',default=[]),
+            tags = dict(type='dict',default=dict()),
             options_to_remove = dict(type='list',default=[]),
             tier_name = dict(default='WebServer', choices=['WebServer','Worker'])
         ),
@@ -268,6 +276,7 @@ def main():
     template_name = module.params['template_name']
     solution_stack_name = module.params['solution_stack_name']
     cname_prefix = module.params['cname_prefix']
+    tags = module.params['tags']
     option_settings = module.params['option_settings']
     options_to_remove = module.params['options_to_remove']
 
@@ -314,8 +323,9 @@ def main():
 
     if state == 'present':
         try:
+            tags_to_apply = [ {'Key':k,'Value':v} for k,v in tags.iteritems()]
             ebs.create_environment(**filter_empty(ApplicationName=app_name, EnvironmentName=env_name,
-                                   VersionLabel=version_label, TemplateName=template_name,
+                                   VersionLabel=version_label, TemplateName=template_name, Tags=tags_to_apply,
                                    SolutionStackName=solution_stack_name, NAMEPrefix=cname_prefix,
                                    Description=description, OptionSettings=option_setting_tups,
                                    Tier={ 'Name': tier_name, 'Type': tier_type, 'Version': '1.0' }))
