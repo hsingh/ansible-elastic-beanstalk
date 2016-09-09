@@ -323,8 +323,11 @@ def main():
             env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
             result = dict(changed=True, env=env)
         except Exception, err:
+            env = describe_env(ebs, app_name, env_name)
             error_msg = boto_exception(err)
-            if 'Environment %s already exists' % env_name in error_msg:
+            if 'Environment %s already exists' % env_name in error_msg and env is None:
+                result = dict(failed=True, output='Environment %s already exists in another application' % env_name)
+            elif 'Environment %s already exists' % env_name in error_msg:
                 update = True
             else:
                 module.fail_json(msg=error_msg)
