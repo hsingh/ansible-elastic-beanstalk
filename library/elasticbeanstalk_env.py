@@ -52,6 +52,11 @@ options:
       - 'A dictionary array of settings to add of the form: { Namespace: ..., OptionName: ... , Value: ... }. If specified, AWS Elastic Beanstalk sets the specified configuration options to the requested value in the configuration set for the new environment. These override the values obtained from the solution stack or the configuration template'
     required: false
     default: null
+  tags:
+    description:
+      - A dictionary of Key/Value tags to apply to the environment on creation. Tags cannot be modified once the environment is created.
+    required: false
+    default: null
   tier_name:
     description:
       - name of the tier
@@ -84,6 +89,8 @@ EXAMPLES = '''
       - Namespace: aws:elasticbeanstalk:application:environment
         OptionName: PARAM2
         Value: foobar
+    tags:
+      Name: Sample App
   register: env
 
 # Delete environment
@@ -96,21 +103,19 @@ EXAMPLES = '''
 '''
 
 try:
-    import boto.beanstalk
-    HAS_BOTO = True
+    import boto3
+    HAS_BOTO3 = True
 except ImportError:
-    HAS_BOTO = False
+    HAS_BOTO3 = False
 
-IGNORE_CODE = "Throttling"
 def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
     timeout_time = time.time() + wait_timeout
 
     while True:
         try:
             env = describe_env(ebs, app_name, env_name)
-        except boto.exception.BotoServerError, e:
-            if e.code != IGNORE_CODE:
-                raise e
+        except Exception, e:
+            raise e
 
         if testfunc(env):
             return env
@@ -138,8 +143,8 @@ def terminated(env):
 def describe_env(ebs, app_name, env_name):
     environment_names = [env_name] if env_name is not None else None
 
-    result = ebs.describe_environments(application_name=app_name, environment_names=environment_names)
-    envs = result["DescribeEnvironmentsResponse"]["DescribeEnvironmentsResult"]["Environments"]
+    result = ebs.describe_environments(ApplicationName=app_name, EnvironmentNames=environment_names)
+    envs = result["Environments"]
 
     if not isinstance(envs, list): return None
 
@@ -152,8 +157,8 @@ def describe_env(ebs, app_name, env_name):
     return envs if env_name is None else envs[0]
 
 def describe_env_config_settings(ebs, app_name, env_name):
-    result = ebs.describe_configuration_settings(application_name=app_name, environment_name=env_name)
-    envs = result["DescribeConfigurationSettingsResponse"]["DescribeConfigurationSettingsResult"]["ConfigurationSettings"]
+    result = ebs.describe_configuration_settings(ApplicationName=app_name, EnvironmentName=env_name)
+    envs = result["ConfigurationSettings"]
 
     if not isinstance(envs, list): return None
 
@@ -170,13 +175,15 @@ def update_required(ebs, env, params):
     if params["version_label"] and env["VersionLabel"] != params["version_label"]:
         updates.append(('VersionLabel', env['VersionLabel'], params['version_label']))
 
-    if env["TemplateName"] != params["template_name"]:
+    if params.get("template_name", None) and not env.has_key("TemplateName"):
+        updates.append(('TemplateName', None, params['template_name']))
+    elif env.has_key("TemplateName") and env["TemplateName"] != params["template_name"]:
         updates.append(('TemplateName', env['TemplateName'], params['template_name']))
 
-    result = ebs.describe_configuration_settings(application_name=params["app_name"],
-                                                 environment_name=params["env_name"])
+    result = ebs.describe_configuration_settings(ApplicationName=params["app_name"],
+                                                 EnvironmentName=params["env_name"])
 
-    options = result["DescribeConfigurationSettingsResponse"]["DescribeConfigurationSettingsResult"]["ConfigurationSettings"][0]["OptionSettings"]
+    options = result["ConfigurationSettings"][0]["OptionSettings"]
 
     for setting in params["option_settings"]:
         change = new_or_changed_option(options, setting)
@@ -232,6 +239,8 @@ def check_env(ebs, app_name, env_name, module):
 
     module.exit_json(**result)
 
+def filter_empty(**kwargs):
+    return {k:v for k,v in kwargs.iteritems() if v}
 
 def main():
     argument_spec = ec2_argument_spec()
@@ -246,6 +255,7 @@ def main():
             solution_stack_name = dict(),
             cname_prefix = dict(),
             option_settings = dict(type='list',default=[]),
+            tags = dict(type='dict',default=dict()),
             options_to_remove = dict(type='list',default=[]),
             tier_name = dict(default='WebServer', choices=['WebServer','Worker'])
         ),
@@ -254,8 +264,8 @@ def main():
                            mutually_exclusive=[['solution_stack_name','template_name']],
                            supports_check_mode=True)
 
-    if not HAS_BOTO:
-        module.fail_json(msg='boto required for this module')
+    if not HAS_BOTO3:
+        module.fail_json(msg='boto3 required for this module')
 
     app_name = module.params['app_name']
     env_name = module.params['env_name']
@@ -266,6 +276,7 @@ def main():
     template_name = module.params['template_name']
     solution_stack_name = module.params['solution_stack_name']
     cname_prefix = module.params['cname_prefix']
+    tags = module.params['tags']
     option_settings = module.params['option_settings']
     options_to_remove = module.params['options_to_remove']
 
@@ -279,13 +290,10 @@ def main():
     option_to_remove_tups = [(otr['Namespace'],otr['OptionName']) for otr in options_to_remove]
 
 
-    region, ec2_url, aws_connect_kwargs = get_aws_connection_info(module)
+    region, ec2_url, aws_connect_kwargs = get_aws_connection_info(module, boto3=True)
 
     try:
-        ebs = boto.beanstalk.connect_to_region(region)
-
-    except boto.exception.NoAuthHandlerFound, e:
-        module.fail_json(msg='No Authentication Handler found: %s ' % str(e))
+        ebs = boto3_conn(module, conn_type='client', resource='elasticbeanstalk', region=region, endpoint=ec2_url, **aws_connect_kwargs)
     except Exception, e:
         module.fail_json(msg='Failed to connect to Beanstalk: %s' % str(e))
 
@@ -315,10 +323,12 @@ def main():
 
     if state == 'present':
         try:
-            ebs.create_environment(app_name, env_name, version_label, template_name,
-                              solution_stack_name, cname_prefix, description,
-                              option_setting_tups, None, tier_name,
-                              tier_type, '1.0')
+            tags_to_apply = [ {'Key':k,'Value':v} for k,v in tags.iteritems()]
+            ebs.create_environment(**filter_empty(ApplicationName=app_name, EnvironmentName=env_name,
+                                   VersionLabel=version_label, TemplateName=template_name, Tags=tags_to_apply,
+                                   SolutionStackName=solution_stack_name, NAMEPrefix=cname_prefix,
+                                   Description=description, OptionSettings=option_setting_tups,
+                                   Tier={ 'Name': tier_name, 'Type': tier_type, 'Version': '1.0' }))
 
             env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
             result = dict(changed=True, env=env)
@@ -335,12 +345,12 @@ def main():
             env = describe_env(ebs, app_name, env_name)
             updates = update_required(ebs, env, module.params)
             if len(updates) > 0:
-                ebs.update_environment(environment_name=env_name,
-                                       version_label=version_label,
-                                       template_name=template_name,
-                                       description=description,
-                                       option_settings=option_setting_tups,
-                                       options_to_remove=None)
+                ebs.update_environment(**filter_empty(
+                                       EnvironmentName=env_name,
+                                       VersionLabel=version_label,
+                                       TemplateName=template_name,
+                                       Description=description,
+                                       OptionSettings=option_setting_tups))
 
                 env = wait_for(ebs, app_name, env_name, wait_timeout, lambda environment: status_is_ready(environment) and version_is_updated(version_label, environment))
 
@@ -354,7 +364,7 @@ def main():
 
     if state == 'absent':
         try:
-            ebs.terminate_environment(environment_name=env_name)
+            ebs.terminate_environment(EnvironmentName=env_name)
             env = wait_for(ebs, app_name, env_name, wait_timeout, terminated)
             result = dict(changed=True, env=env)
         except Exception, err:
