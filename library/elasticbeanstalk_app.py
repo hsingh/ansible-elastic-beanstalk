@@ -143,7 +143,7 @@ def main():
         if app is None:
             result = dict(changed=False, output='Application not found')
         else:
-            ebs.delete_application(app_name)
+            ebs.delete_application(app_name, terminate_env_by_force=True)
             result = dict(changed=True, app=app)
 
     else:
