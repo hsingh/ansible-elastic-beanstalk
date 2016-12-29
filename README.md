@@ -6,7 +6,15 @@ Ansible modules for working with Amazon Elastic Beanstalk
 Requirements
 ------------
 
-This module requires [boto](https://github.com/boto/boto)
+This module requires [boto3](https://github.com/boto/boto3) and Ansible >= 2.0
+
+
+Versioning
+------------
+
+Module version 2.X (master branch) requires boto3 and Ansible >= 2.0. Module
+version 1.X (release-1.0 branch) requires [boto](https://github.com/boto/boto)
+and works with Ansible < 2.0.
 
 
 Example Playbook
