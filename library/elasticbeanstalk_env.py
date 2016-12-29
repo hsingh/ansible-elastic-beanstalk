@@ -14,7 +14,7 @@ options:
     default: null
   env_name:
     description:
-      - unique name for the deployment environment. Must be from 4 to 23 characters in length. The name can contain only letters, numbers, and hyphens. It cannot start or end with a hyphen. This name must be unique in your account.
+      - unique name for the deployment environment. Must be from 4 to 40 characters in length. The name can contain only letters, numbers, and hyphens. It cannot start or end with a hyphen. This name must be unique in your account.
     required: true
     default: null
   version_label:
@@ -102,11 +102,57 @@ EXAMPLES = '''
     region: us-west-2
 '''
 
+RETURN = '''
+env:
+    description: beanstalk environment
+    returned: success and when state != list
+    type: dict
+    sample: {
+        "AbortableOperationInProgress": false,
+        "ApplicationName": "app-name",
+        "CNAME": "app-name.p55wp6rh2e.us-west-2.elasticbeanstalk.com",
+        "DateCreated": "2016-05-20T19:03:05.090000+00:00",
+        "DateUpdated": "2016-12-09T16:23:55.915000+00:00",
+        "EndpointURL": "awseb-e-g-AWSEBLoa-D0BNVCQMC73I-22790164.us-west-2.elb.amazonaws.com",
+        "EnvironmentId": "e-g2jcgheahs",
+        "EnvironmentLinks": [],
+        "EnvironmentName": "app-name-qa",
+        "Health": "Green",
+        "SolutionStackName": "64bit Amazon Linux 2016.03 v2.1.0 running Docker 1.9.1",
+        "Status": "Ready",
+        "Tier": {
+            "Name": "WebServer",
+            "Type": "Standard",
+            "Version": "1.0"
+        },
+        "OptionSettings": [
+            // included when state == detail
+            {
+                "Namespace": "aws:autoscaling:asg",
+                "OptionName": "Availability Zones",
+                "ResourceName": "AWSEBAutoScalingGroup",
+                "Value": "Any"
+            }
+            ...
+        ]
+        "VersionLabel": "1.0.0"
+    }
+output:
+    description: message indicating what change will occur
+    returned: in check mode
+    type: string
+    sample: Environment is up-to-date
+'''
+
 try:
     import boto3
+    from botocore.exceptions import ClientError
     HAS_BOTO3 = True
 except ImportError:
     HAS_BOTO3 = False
+
+from ansible.module_utils.basic import AnsibleModule
+from ansible.module_utils.ec2 import boto3_conn, ec2_argument_spec, get_aws_connection_info, camel_dict_to_snake_dict
 
 def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
     timeout_time = time.time() + wait_timeout
@@ -141,7 +187,7 @@ def terminated(env):
     return env["Status"] == "Terminated"
 
 def describe_env(ebs, app_name, env_name):
-    environment_names = [env_name] if env_name is not None else None
+    environment_names = [] if env_name is None else [env_name]
 
     result = ebs.describe_environments(ApplicationName=app_name, EnvironmentNames=environment_names)
     envs = result["Environments"]
@@ -207,17 +253,6 @@ def new_or_changed_option(options, setting):
 
     return (setting["Namespace"] + ':' + setting["OptionName"], "<NEW>", setting["Value"])
 
-def boto_exception(err):
-    '''generic error message handler'''
-    if hasattr(err, 'error_message'):
-        error = err.error_message
-    elif hasattr(err, 'message'):
-        error = err.message
-    else:
-        error = '%s: %s' % (Exception, err)
-
-    return error
-
 def check_env(ebs, app_name, env_name, module):
     state = module.params['state']
     env = describe_env(ebs, app_name, env_name)
@@ -245,15 +280,15 @@ def filter_empty(**kwargs):
 def main():
     argument_spec = ec2_argument_spec()
     argument_spec.update(dict(
-            app_name       = dict(required=True),
-            env_name       = dict(),
-            version_label  = dict(),
-            description    = dict(),
+            app_name       = dict(type='str', required=True),
+            env_name       = dict(type='str', required=False),
+            version_label  = dict(type='str', required=False),
+            description    = dict(type='str', required=False),
             state          = dict(choices=['present','absent','list','details'], default='present'),
             wait_timeout   = dict(default=900, type='int'),
-            template_name  = dict(),
-            solution_stack_name = dict(),
-            cname_prefix = dict(),
+            template_name  = dict(type='str', required=False),
+            solution_stack_name = dict(type='str', required=False),
+            cname_prefix = dict(type='str', required=False),
             option_settings = dict(type='list',default=[]),
             tags = dict(type='dict',default=dict()),
             options_to_remove = dict(type='list',default=[]),
@@ -289,14 +324,12 @@ def main():
     option_setting_tups = [(os['Namespace'],os['OptionName'],os['Value']) for os in option_settings]
     option_to_remove_tups = [(otr['Namespace'],otr['OptionName']) for otr in options_to_remove]
 
-
-    region, ec2_url, aws_connect_kwargs = get_aws_connection_info(module, boto3=True)
-
-    try:
-        ebs = boto3_conn(module, conn_type='client', resource='elasticbeanstalk', region=region, endpoint=ec2_url, **aws_connect_kwargs)
-    except Exception, e:
-        module.fail_json(msg='Failed to connect to Beanstalk: %s' % str(e))
-
+    region, ec2_url, aws_connect_params = get_aws_connection_info(module, boto3=True)
+    if region:
+        ebs = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
+                region=region, endpoint=ec2_url, **aws_connect_params)
+    else:
+        module.fail_json(msg='region must be specified')
 
     update = False
     result = {}
@@ -304,18 +337,16 @@ def main():
     if state == 'list':
         try:
             env = describe_env(ebs, app_name, env_name)
-            result = dict(changed=False, env=env)
-        except Exception, err:
-            error_msg = boto_exception(err)
-            module.fail_json(msg=error_msg)
+            result = dict(changed=False, env=[] if env is None else env)
+        except ClientError, e:
+            module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
 
     if state == 'details':
         try:
             env = describe_env_config_settings(ebs, app_name, env_name)
             result = dict(changed=False, env=env)
-        except Exception, err:
-            error_msg = boto_exception(err)
-            module.fail_json(msg=error_msg)
+        except ClientError, e:
+            module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
 
     if module.check_mode and (state != 'list' or state != 'details'):
         check_env(ebs, app_name, env_name, module)
@@ -324,21 +355,24 @@ def main():
     if state == 'present':
         try:
             tags_to_apply = [ {'Key':k,'Value':v} for k,v in tags.iteritems()]
-            ebs.create_environment(**filter_empty(ApplicationName=app_name, EnvironmentName=env_name,
-                                   VersionLabel=version_label, TemplateName=template_name, Tags=tags_to_apply,
-                                   SolutionStackName=solution_stack_name, NAMEPrefix=cname_prefix,
-                                   Description=description, OptionSettings=option_setting_tups,
-                                   Tier={ 'Name': tier_name, 'Type': tier_type, 'Version': '1.0' }))
+            ebs.create_environment(**filter_empty(ApplicationName=app_name,
+                                                  EnvironmentName=env_name,
+                                                  VersionLabel=version_label,
+                                                  TemplateName=template_name,
+                                                  Tags=tags_to_apply,
+                                                  SolutionStackName=solution_stack_name,
+                                                  CNAMEPrefix=cname_prefix,
+                                                  Description=description,
+                                                  OptionSettings=option_setting_tups,
+                                                  Tier={'Name':tier_name, 'Type':tier_type, 'Version':'1.0'}))
 
             env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
             result = dict(changed=True, env=env)
-        except Exception, err:
-            error_msg = boto_exception(err)
-            if 'Environment %s already exists' % env_name in error_msg:
+        except ClientError, e:
+            if 'Environment %s already exists' % env_name in e.message:
                 update = True
             else:
-                module.fail_json(msg=error_msg)
-
+                module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
 
     if update:
         try:
@@ -352,33 +386,29 @@ def main():
                                        Description=description,
                                        OptionSettings=option_setting_tups))
 
-                env = wait_for(ebs, app_name, env_name, wait_timeout, lambda environment: status_is_ready(environment) and version_is_updated(version_label, environment))
+                env = wait_for(ebs, app_name, env_name, wait_timeout,
+                         lambda environment: status_is_ready(environment) and
+                           version_is_updated(version_label, environment))
 
                 result = dict(changed=True, env=env, updates=updates)
             else:
                 result = dict(changed=False, env=env)
-
-        except Exception, err:
-            error_msg = boto_exception(err)
-            module.fail_json(msg=error_msg)
+        except ClientError, e:
+            module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
 
     if state == 'absent':
         try:
             ebs.terminate_environment(EnvironmentName=env_name)
             env = wait_for(ebs, app_name, env_name, wait_timeout, terminated)
             result = dict(changed=True, env=env)
-        except Exception, err:
-            error_msg = boto_exception(err)
-            if 'No Environment found for EnvironmentName = \'%s\'' % env_name in error_msg:
+        except ClientError, e:
+            if 'No Environment found for EnvironmentName = \'%s\'' % env_name in e.message:
                 result = dict(changed=False, output='Environment not found')
             else:
-                module.fail_json(msg=error_msg)
+                module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
 
     module.exit_json(**result)
 
 
-# import module snippets
-from ansible.module_utils.basic import *
-from ansible.module_utils.ec2 import *
-
-main()
+if __name__ == '__main__':
+    main()

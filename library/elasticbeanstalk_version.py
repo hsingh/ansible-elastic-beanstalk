@@ -32,6 +32,11 @@ options:
       - describes the version
     required: false
     default: null
+  delete_soure:
+    description:
+      - Set to true to delete the source bundle from your storage bucket.
+    required: false
+    default: False
   state:
     description:
       - whether to ensure the version is present or absent, or to list existing versions
@@ -66,12 +71,69 @@ EXAMPLES = '''
     region: us-west-1
 '''
 
-try:
-    import boto.beanstalk
-    HAS_BOTO = True
-except ImportError:
-    HAS_BOTO = False
+RETURN = '''
+version:
+    description: beanstalk application version
+    returned: success and when state != list
+    type: dict
+    sample: {
+        "ApplicationName": "app-name",
+        "DateCreated": "2016-12-28T16:04:50.344000+00:00",
+        "DateUpdated": "2016-12-28T16:05:58.593000+00:00",
+        "Description": "version 1.0.0",
+        "SourceBundle": {
+            "S3Bucket": "s3-bucket",
+            "S3Key": "s3/key/file-1.0.0.zip"
+        },
+        "Status": "UNPROCESSED",
+        "VersionLabel": "1.0.0"
+    }
+versions:
+    description: list of beanstalk application versions
+    returned: when state == list
+    type: list
+    sample: [
+        {
+            "ApplicationName": "app-name",
+            "DateCreated": "2016-12-28T16:04:50.344000+00:00",
+            "DateUpdated": "2016-12-28T16:05:58.593000+00:00",
+            "Description": "version 1.0.0",
+            "SourceBundle": {
+                "S3Bucket": "s3-bucket",
+                "S3Key": "s3/key/file-1.0.0.zip"
+            },
+            "Status": "UNPROCESSED",
+            "VersionLabel": "1.0.0"
+        },
+        {
+            "ApplicationName": "app-name",
+            "DateCreated": "2016-12-28T16:04:50.344000+00:00",
+            "DateUpdated": "2016-12-28T16:05:58.593000+00:00",
+            "Description": "version 1.0.1",
+            "SourceBundle": {
+                "S3Bucket": "s3-bucket",
+                "S3Key": "s3/key/file-1.0.1.zip"
+            },
+            "Status": "UNPROCESSED",
+            "VersionLabel": "1.0.1"
+        }
+    ]
+output:
+    description: message indicating what change will occur
+    returned: in check mode
+    type: string
+    sample: Version is up-to-date
+'''
 
+
+try:
+    import boto3
+    HAS_BOTO3 = True
+except ImportError:
+    HAS_BOTO3 = False
+
+from ansible.module_utils.basic import AnsibleModule
+from ansible.module_utils.ec2 import boto3_conn, ec2_argument_spec, get_aws_connection_info
 
 def describe_version(ebs, app_name, version_label):
     versions = list_versions(ebs, app_name, version_label)
@@ -79,10 +141,12 @@ def describe_version(ebs, app_name, version_label):
     return None if len(versions) != 1 else versions[0]
 
 def list_versions(ebs, app_name, version_label):
-    versions = ebs.describe_application_versions(app_name, version_label)
-    versions = versions["DescribeApplicationVersionsResponse"]["DescribeApplicationVersionsResult"]["ApplicationVersions"]
+    if version_label is None:
+        versions = ebs.describe_application_versions(ApplicationName=app_name)
+    else:
+        versions = ebs.describe_application_versions(ApplicationName=app_name, VersionLabels=[version_label])
 
-    return versions
+    return versions["ApplicationVersions"]
 
 def check_version(ebs, version, module):
     app_name = module.params['app_name']
@@ -94,9 +158,9 @@ def check_version(ebs, version, module):
 
     if state == 'present' and version is None:
         result = dict(changed=True, output = "Version would be created")
-    elif state == 'present' and version["Description"] != description:
+    elif state == 'present' and version.get("Description", None) != description:
         result = dict(changed=True, output = "Version would be updated", version=version)
-    elif state == 'present' and version["Description"] == description:
+    elif state == 'present' and version.get("Description", None) == description:
         result = dict(changed=False, output="Version is up-to-date", version=version)
     elif state == 'absent' and version is None:
         result = dict(changed=False, output="Version does not exist")
@@ -105,22 +169,25 @@ def check_version(ebs, version, module):
 
     module.exit_json(**result)
 
+def filter_empty(**kwargs):
+    return {k:v for k,v in kwargs.iteritems() if v}
+
 def main():
     argument_spec = ec2_argument_spec()
     argument_spec.update(dict(
-            app_name       = dict(required=True),
-            version_label  = dict(),
-            s3_bucket      = dict(),
-            s3_key         = dict(),
-            description    = dict(),
+            app_name       = dict(type='str', required=True),
+            version_label  = dict(type='str', required=False),
+            s3_bucket      = dict(type='str', required=False),
+            s3_key         = dict(type='str', required=False),
+            description    = dict(type='str', required=False),
             delete_source  = dict(type='bool',default=False),
             state          = dict(choices=['present','absent','list'], default='present')
         ),
     )
     module = AnsibleModule(argument_spec=argument_spec, supports_check_mode=True)
 
-    if not HAS_BOTO:
-        module.fail_json(msg='boto required for this module')
+    if not HAS_BOTO3:
+        module.fail_json(msg='boto3 required for this module')
 
     app_name = module.params['app_name']
     version_label = module.params['version_label']
@@ -130,11 +197,11 @@ def main():
 
     if version_label is None:
         if state != 'list':
-            module.fail_json('Module parameter "version_label" is required if "state" is not "list"')
+            module.fail_json(msg='Module parameter "version_label" is required if "state" is not "list"')
 
     if module.params['s3_bucket'] is None and module.params['s3_key'] is None:
         if state == 'present':
-            module.fail_json('Module parameter "s3_bucket" or "s3_key" is required if "state" is "present"')
+            module.fail_json(msg='Module parameter "s3_bucket" or "s3_key" is required if "state" is "present"')
 
     if module.params['s3_bucket'] is not None:
         s3_bucket = module.params['s3_bucket']
@@ -144,33 +211,36 @@ def main():
 
 
     result = {}
-    region, ec2_url, aws_connect_kwargs = get_aws_connection_info(module)
+    region, ec2_url, aws_connect_params = get_aws_connection_info(module, boto3=True)
 
-    try:
-        ebs = boto.beanstalk.connect_to_region(region)
-
-    except boto.exception.NoAuthHandlerFound, e:
-        module.fail_json(msg='No Authentication Handler found: %s ' % str(e))
-    except Exception, e:
-        module.fail_json(msg='Failed to connect to Beanstalk: %s' % str(e))
+    if region:
+        ebs = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
+                region=region, endpoint=ec2_url, **aws_connect_params)
+    else:
+        module.fail_json(msg='region must be specified')
 
 
     version = describe_version(ebs, app_name, version_label)
 
     if module.check_mode and state != 'list':
         check_version(ebs, version, module)
-        module.fail_json('ASSERTION FAILURE: check_version() should not return control.')
+        module.fail_json(msg='ASSERTION FAILURE: check_version() should not return control.')
 
 
     if state == 'present':
         if version is None:
-            create_req = ebs.create_application_version(app_name, version_label, description, s3_bucket, s3_key)
+            create_req = ebs.create_application_version(**filter_empty(ApplicationName=app_name,
+                                                        VersionLabel=version_label,
+                                                        Description=description,
+                                                        SourceBundle={'S3Bucket':s3_bucket, 'S3Key':s3_key}))
             version = describe_version(ebs, app_name, version_label)
 
             result = dict(changed=True, version=version)
         else:
-            if version["Description"] != description:
-                ebs.update_application_version(app_name, version_label, description)
+            if version.get("Description", None) != description:
+                ebs.update_application_version(ApplicationName=app_name,
+                                               VersionLabel=version_label,
+                                               Description='' if description is None else description)
                 version = describe_version(ebs, app_name, version_label)
 
                 result = dict(changed=True, version=version)
@@ -181,19 +251,16 @@ def main():
         if version is None:
             result = dict(changed=False, output='Version not found')
         else:
-            ebs.delete_application_version(app_name, version_label, delete_source)
+            ebs.delete_application_version(ApplicationName=app_name,
+                                           VersionLabel=version_label,
+                                           DeleteSourceBundle=delete_source)
             result = dict(changed=True, version=version)
 
     else:
         versions = list_versions(ebs, app_name, version_label)
-
         result = dict(changed=False, versions=versions)
 
     module.exit_json(**result)
 
-
-# import module snippets
-from ansible.module_utils.basic import *
-from ansible.module_utils.ec2 import *
-
-main()
+if __name__ == '__main__':
+    main()
