@@ -151,9 +151,6 @@ try:
 except ImportError:
     HAS_BOTO3 = False
 
-from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.ec2 import boto3_conn, ec2_argument_spec, get_aws_connection_info, camel_dict_to_snake_dict
-
 def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
     timeout_time = time.time() + wait_timeout
 
@@ -321,9 +318,6 @@ def main():
     if tier_name == 'Worker':
         tier_type = 'SQS/HTTP'
 
-    option_setting_tups = [(os['Namespace'],os['OptionName'],os['Value']) for os in option_settings]
-    option_to_remove_tups = [(otr['Namespace'],otr['OptionName']) for otr in options_to_remove]
-
     region, ec2_url, aws_connect_params = get_aws_connection_info(module, boto3=True)
     if region:
         ebs = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
@@ -363,7 +357,7 @@ def main():
                                                   SolutionStackName=solution_stack_name,
                                                   CNAMEPrefix=cname_prefix,
                                                   Description=description,
-                                                  OptionSettings=option_setting_tups,
+                                                  OptionSettings=option_settings,
                                                   Tier={'Name':tier_name, 'Type':tier_type, 'Version':'1.0'}))
 
             env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
@@ -384,7 +378,7 @@ def main():
                                        VersionLabel=version_label,
                                        TemplateName=template_name,
                                        Description=description,
-                                       OptionSettings=option_setting_tups))
+                                       OptionSettings=option_settings))
 
                 env = wait_for(ebs, app_name, env_name, wait_timeout,
                          lambda environment: status_is_ready(environment) and
@@ -409,6 +403,8 @@ def main():
 
     module.exit_json(**result)
 
+from ansible.module_utils.basic import *
+from ansible.module_utils.ec2 import boto3_conn, ec2_argument_spec, get_aws_connection_info, camel_dict_to_snake_dict
 
 if __name__ == '__main__':
     main()
