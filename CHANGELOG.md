@@ -1,5 +1,8 @@
 # Changelog
 
+#### 2.0.1 January 6 2017
+- Fixed #21 option settings failed to be applied by elasticbeanstalk_env module 
+
 #### 2.0.0 December 29 2016
 - Upgraded all modules to boto3, now requires Ansible >= 2.0
 
