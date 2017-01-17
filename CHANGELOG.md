@@ -1,5 +1,11 @@
 # Changelog
 
+#### 1.0.1 *Unreleased*
+- Fix wait check when terminating environments, #20
+
+#### 1.0.0 December 29 2016
+- 1.0.0 release
+
 #### 0.9.1 October 26 2016
 - Fix bug in environment version update check
 

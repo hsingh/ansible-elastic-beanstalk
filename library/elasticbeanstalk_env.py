@@ -107,7 +107,7 @@ def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
 
     while True:
         try:
-            env = describe_env(ebs, app_name, env_name)
+            env = describe_env(ebs, app_name, env_name, [])
         except boto.exception.BotoServerError, e:
             if e.code != IGNORE_CODE:
                 raise e
@@ -135,7 +135,7 @@ def health_is_grey(env):
 def terminated(env):
     return env["Status"] == "Terminated"
 
-def describe_env(ebs, app_name, env_name):
+def describe_env(ebs, app_name, env_name, ignored_statuses):
     environment_names = [env_name] if env_name is not None else None
 
     result = ebs.describe_environments(application_name=app_name, environment_names=environment_names)
@@ -144,7 +144,7 @@ def describe_env(ebs, app_name, env_name):
     if not isinstance(envs, list): return None
 
     for env in envs:
-        if env.has_key("Status") and env["Status"] in ["Terminated","Terminating"]:
+        if env.has_key("Status") and env["Status"] in ignored_statuses:
             envs.remove(env)
 
     if len(envs) == 0: return None
@@ -213,7 +213,7 @@ def boto_exception(err):
 
 def check_env(ebs, app_name, env_name, module):
     state = module.params['state']
-    env = describe_env(ebs, app_name, env_name)
+    env = describe_env(ebs, app_name, env_name, ["Terminated","Terminating"])
 
     result = {}
 
@@ -295,7 +295,7 @@ def main():
 
     if state == 'list':
         try:
-            env = describe_env(ebs, app_name, env_name)
+            env = describe_env(ebs, app_name, env_name, [])
             result = dict(changed=False, env=env)
         except Exception, err:
             error_msg = boto_exception(err)
@@ -332,7 +332,7 @@ def main():
 
     if update:
         try:
-            env = describe_env(ebs, app_name, env_name)
+            env = describe_env(ebs, app_name, env_name, [])
             updates = update_required(ebs, env, module.params)
             if len(updates) > 0:
                 ebs.update_environment(environment_name=env_name,
