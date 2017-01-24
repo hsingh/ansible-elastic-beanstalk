@@ -337,7 +337,7 @@ def main():
 
     if state == 'details':
         try:
-            env = describe_env_config_settings(ebs, app_name, env_name, [])
+            env = describe_env_config_settings(ebs, app_name, env_name)
             result = dict(changed=False, env=env)
         except ClientError, e:
             module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
