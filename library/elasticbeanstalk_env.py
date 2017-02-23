@@ -156,7 +156,7 @@ def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
 
     while True:
         try:
-            env = describe_env(ebs, app_name, env_name)
+            env = describe_env(ebs, app_name, env_name, [])
         except Exception, e:
             raise e
 
@@ -183,7 +183,7 @@ def health_is_grey(env):
 def terminated(env):
     return env["Status"] == "Terminated"
 
-def describe_env(ebs, app_name, env_name):
+def describe_env(ebs, app_name, env_name, ignored_statuses):
     environment_names = [] if env_name is None else [env_name]
 
     result = ebs.describe_environments(ApplicationName=app_name, EnvironmentNames=environment_names)
@@ -192,7 +192,7 @@ def describe_env(ebs, app_name, env_name):
     if not isinstance(envs, list): return None
 
     for env in envs:
-        if env.has_key("Status") and env["Status"] in ["Terminated","Terminating"]:
+        if env.has_key("Status") and env["Status"] in ignored_statuses:
             envs.remove(env)
 
     if len(envs) == 0: return None
@@ -252,7 +252,7 @@ def new_or_changed_option(options, setting):
 
 def check_env(ebs, app_name, env_name, module):
     state = module.params['state']
-    env = describe_env(ebs, app_name, env_name)
+    env = describe_env(ebs, app_name, env_name, ["Terminated","Terminating"])
 
     result = {}
 
@@ -330,7 +330,7 @@ def main():
 
     if state == 'list':
         try:
-            env = describe_env(ebs, app_name, env_name)
+            env = describe_env(ebs, app_name, env_name, [])
             result = dict(changed=False, env=[] if env is None else env)
         except ClientError, e:
             module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
@@ -370,7 +370,7 @@ def main():
 
     if update:
         try:
-            env = describe_env(ebs, app_name, env_name)
+            env = describe_env(ebs, app_name, env_name, [])
             updates = update_required(ebs, env, module.params)
             if len(updates) > 0:
                 ebs.update_environment(**filter_empty(
