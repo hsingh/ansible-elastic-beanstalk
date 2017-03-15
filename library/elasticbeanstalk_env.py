@@ -34,12 +34,12 @@ options:
     default: 900
   template_name:
     description:
-      - name of the configuration template to use in deployment. You must specify either this parameter or a solution_stack_name
+      - name of the configuration template to use in deployment. You must specify either this parameter or a solution_stack_name, or a version_label
     required: false
     default: null
   solution_stack_name:
     description:
-      - this is an alternative to specifying a template_name. You must specify either this or a template_name, but not both
+      - this is an alternative to specifying a template_name. You must specify either this or a template_name, or a version_label
     required: false
     default: null
   cname_prefix:
@@ -143,7 +143,7 @@ output:
     type: string
     sample: Environment is up-to-date
 '''
-
+import q
 try:
     import boto3
     from botocore.exceptions import ClientError
@@ -151,12 +151,12 @@ try:
 except ImportError:
     HAS_BOTO3 = False
 
-def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
+def wait_for(module, ebs, app_name, env_name, wait_timeout, testfunc):
     timeout_time = time.time() + wait_timeout
 
     while True:
         try:
-            env = describe_env(ebs, app_name, env_name, [])
+            env = describe_env(module, ebs, app_name, env_name, [])
         except Exception, e:
             raise e
 
@@ -169,7 +169,7 @@ def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
         time.sleep(15)
 
 def version_is_updated(version_label, env):
-    return version_label == ""  or env["VersionLabel"] == version_label
+    return version_label == "" or env.get("VersionLabel", None) == version_label
 
 def status_is_ready(env):
     return env["Status"] == "Ready"
@@ -183,19 +183,22 @@ def health_is_grey(env):
 def terminated(env):
     return env["Status"] == "Terminated"
 
-def describe_env(ebs, app_name, env_name, ignored_statuses):
-    environment_names = [] if env_name is None else [env_name]
+def describe_env(module, ebs, app_name, env_name, ignored_statuses):
+    environment_names = [env_name] if not isinstance(env_name, list) else env_name
 
     result = ebs.describe_environments(ApplicationName=app_name, EnvironmentNames=environment_names)
-    envs = result["Environments"]
+    q(result)
 
-    if not isinstance(envs, list): return None
+    envs = result["Environments"]
+    if len(envs) == 0:
+        module.fail_json(msg='No beanstalk environments found for describe_environments')
+
+    if not isinstance(envs, list): return {}
 
     for env in envs:
         if env.has_key("Status") and env["Status"] in ignored_statuses:
             envs.remove(env)
-
-    if len(envs) == 0: return None
+    if len(envs) == 0: return {}
 
     return envs if env_name is None else envs[0]
 
@@ -215,13 +218,10 @@ def describe_env_config_settings(ebs, app_name, env_name):
 
 def update_required(ebs, env, params):
     updates = []
-    if params["version_label"] and env["VersionLabel"] != params["version_label"]:
-        updates.append(('VersionLabel', env['VersionLabel'], params['version_label']))
-
-    if params.get("template_name", None) and not env.has_key("TemplateName"):
-        updates.append(('TemplateName', None, params['template_name']))
-    elif env.has_key("TemplateName") and env["TemplateName"] != params["template_name"]:
-        updates.append(('TemplateName', env['TemplateName'], params['template_name']))
+    if "version_label" in params and env.get("VersionLabel", None) != params["version_label"]:
+        updates.append(('VersionLabel', env.get("VersionLabel", None), params['version_label']))
+    elif params.get("template_name", None) and env.get("TemplateName", None) != params["template_name"]:
+        updates.append(('TemplateName', env.get("TemplateName", None), params['template_name']))
 
     result = ebs.describe_configuration_settings(ApplicationName=params["app_name"],
                                                  EnvironmentName=params["env_name"])
@@ -252,7 +252,7 @@ def new_or_changed_option(options, setting):
 
 def check_env(ebs, app_name, env_name, module):
     state = module.params['state']
-    env = describe_env(ebs, app_name, env_name, ["Terminated","Terminating"])
+    env = describe_env(module, ebs, app_name, env_name, ["Terminated","Terminating"])
 
     result = {}
 
@@ -330,7 +330,7 @@ def main():
 
     if state == 'list':
         try:
-            env = describe_env(ebs, app_name, env_name, [])
+            env = describe_env(module, ebs, app_name, env_name, [])
             result = dict(changed=False, env=[] if env is None else env)
         except ClientError, e:
             module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
@@ -346,7 +346,9 @@ def main():
         check_env(ebs, app_name, env_name, module)
         module.fail_json('ASSERTION FAILURE: check_version() should not return control.')
 
-    if state == 'present':
+    if template_name is None and solution_stack_name is None:
+        update = True
+    if state == 'present' and not update:
         try:
             tags_to_apply = [ {'Key':k,'Value':v} for k,v in tags.iteritems()]
             ebs.create_environment(**filter_empty(ApplicationName=app_name,
@@ -360,7 +362,7 @@ def main():
                                                   OptionSettings=option_settings,
                                                   Tier={'Name':tier_name, 'Type':tier_type, 'Version':'1.0'}))
 
-            env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
+            env = wait_for(module, ebs, app_name, env_name, wait_timeout, status_is_ready)
             result = dict(changed=True, env=env)
         except ClientError, e:
             if 'Environment %s already exists' % env_name in e.message:
@@ -370,17 +372,17 @@ def main():
 
     if update:
         try:
-            env = describe_env(ebs, app_name, env_name, [])
+            env = describe_env(module, ebs, app_name, env_name, [])
             updates = update_required(ebs, env, module.params)
             if len(updates) > 0:
-                ebs.update_environment(**filter_empty(
+                result = ebs.update_environment(**filter_empty(
                                        EnvironmentName=env_name,
                                        VersionLabel=version_label,
                                        TemplateName=template_name,
                                        Description=description,
                                        OptionSettings=option_settings))
-
-                env = wait_for(ebs, app_name, env_name, wait_timeout,
+                q(result)
+                env = wait_for(module, ebs, app_name, env_name, wait_timeout,
                          lambda environment: status_is_ready(environment) and
                            version_is_updated(version_label, environment))
 
@@ -393,7 +395,7 @@ def main():
     if state == 'absent':
         try:
             ebs.terminate_environment(EnvironmentName=env_name)
-            env = wait_for(ebs, app_name, env_name, wait_timeout, terminated)
+            env = wait_for(module, ebs, app_name, env_name, wait_timeout, terminated)
             result = dict(changed=True, env=env)
         except ClientError, e:
             if 'No Environment found for EnvironmentName = \'%s\'' % env_name in e.message:
