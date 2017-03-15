@@ -143,7 +143,6 @@ output:
     type: string
     sample: Environment is up-to-date
 '''
-import q
 try:
     import boto3
     from botocore.exceptions import ClientError
@@ -187,7 +186,6 @@ def describe_env(module, ebs, app_name, env_name, ignored_statuses):
     environment_names = [env_name] if not isinstance(env_name, list) else env_name
 
     result = ebs.describe_environments(ApplicationName=app_name, EnvironmentNames=environment_names)
-    q(result)
 
     envs = result["Environments"]
     if len(envs) == 0:
@@ -381,7 +379,6 @@ def main():
                                        TemplateName=template_name,
                                        Description=description,
                                        OptionSettings=option_settings))
-                q(result)
                 env = wait_for(module, ebs, app_name, env_name, wait_timeout,
                          lambda environment: status_is_ready(environment) and
                            version_is_updated(version_label, environment))
