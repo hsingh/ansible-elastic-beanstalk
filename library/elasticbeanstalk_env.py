@@ -183,20 +183,19 @@ def terminated(env):
     return env["Status"] == "Terminated"
 
 def describe_env(module, ebs, app_name, env_name, ignored_statuses):
-    environment_names = [env_name] if not isinstance(env_name, list) else env_name
+    environment_names = [] if env_name is None else [env_name]
 
     result = ebs.describe_environments(ApplicationName=app_name, EnvironmentNames=environment_names)
 
     envs = result["Environments"]
-    if len(envs) == 0:
+    if not isinstance(envs, list) or len(envs) == 0:
         module.fail_json(msg='No beanstalk environments found for describe_environments')
-
-    if not isinstance(envs, list): return {}
 
     for env in envs:
         if env.has_key("Status") and env["Status"] in ignored_statuses:
             envs.remove(env)
-    if len(envs) == 0: return {}
+    if len(envs) == 0:
+        module.fail_json(msg='No beanstalk environments found for describe_environments')
 
     return envs if env_name is None else envs[0]
 
@@ -373,7 +372,7 @@ def main():
             env = describe_env(module, ebs, app_name, env_name, [])
             updates = update_required(ebs, env, module.params)
             if len(updates) > 0:
-                result = ebs.update_environment(**filter_empty(
+                ebs.update_environment(**filter_empty(
                                        EnvironmentName=env_name,
                                        VersionLabel=version_label,
                                        TemplateName=template_name,
