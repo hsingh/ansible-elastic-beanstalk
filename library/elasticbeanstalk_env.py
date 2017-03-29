@@ -65,10 +65,15 @@ options:
     choices: ['WebServer', 'Worker']
   state:
     description:
-      - whether to ensure the environment is present or absent, or to list existing environments
+      - whether to ensure the environment is present or absent, list existing environments, or wait for an environment previously created with "wait: no" to become ready.
     required: false
     default: present
-    choices: ['absent','present','list','details']
+    choices: ['absent','present','list','details','wait-ready']
+  wait:
+    description:
+      - whether to wait for an absent/present operation to complete, or to just proceed immediately.
+    required: false
+    default: true
 
 author: Harpreet Singh
 extends_documentation_fragment: aws
@@ -99,6 +104,15 @@ EXAMPLES = '''
     env_name: sampleApp-env
     state: absent
     wait_timeout: 360
+    region: us-west-2
+
+
+# asyncronously wait for environment to be ready. first run above create/update with wait: no
+- elasticbeanstalk_env:
+    app_name: Sample App
+    env_name: sampleApp-env
+    state: wait-ready
+    wait_timeout: 1200
     region: us-west-2
 '''
 
@@ -156,7 +170,7 @@ def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
 
     while True:
         try:
-            env = describe_env(ebs, app_name, env_name, [])
+            env = describe_env(ebs, app_name, env_name)
         except Exception, e:
             raise e
 
@@ -171,6 +185,9 @@ def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
 def version_is_updated(version_label, env):
     return version_label == ""  or env["VersionLabel"] == version_label
 
+def status_is_any(env):
+    return True
+
 def status_is_ready(env):
     return env["Status"] == "Ready"
 
@@ -183,7 +200,7 @@ def health_is_grey(env):
 def terminated(env):
     return env["Status"] == "Terminated"
 
-def describe_env(ebs, app_name, env_name, ignored_statuses):
+def describe_env(ebs, app_name, env_name):
     environment_names = [] if env_name is None else [env_name]
 
     result = ebs.describe_environments(ApplicationName=app_name, EnvironmentNames=environment_names)
@@ -192,7 +209,7 @@ def describe_env(ebs, app_name, env_name, ignored_statuses):
     if not isinstance(envs, list): return None
 
     for env in envs:
-        if env.has_key("Status") and env["Status"] in ignored_statuses:
+        if env.has_key("Status") and env["Status"] in ["Terminated","Terminating"]:
             envs.remove(env)
 
     if len(envs) == 0: return None
@@ -252,7 +269,7 @@ def new_or_changed_option(options, setting):
 
 def check_env(ebs, app_name, env_name, module):
     state = module.params['state']
-    env = describe_env(ebs, app_name, env_name, ["Terminated","Terminating"])
+    env = describe_env(ebs, app_name, env_name)
 
     result = {}
 
@@ -281,7 +298,7 @@ def main():
             env_name       = dict(type='str', required=False),
             version_label  = dict(type='str', required=False),
             description    = dict(type='str', required=False),
-            state          = dict(choices=['present','absent','list','details'], default='present'),
+            state          = dict(choices=['present','absent','list','details','wait-ready'], default='present'),
             wait_timeout   = dict(default=900, type='int'),
             template_name  = dict(type='str', required=False),
             solution_stack_name = dict(type='str', required=False),
@@ -289,7 +306,8 @@ def main():
             option_settings = dict(type='list',default=[]),
             tags = dict(type='dict',default=dict()),
             options_to_remove = dict(type='list',default=[]),
-            tier_name = dict(default='WebServer', choices=['WebServer','Worker'])
+            tier_name = dict(default='WebServer', choices=['WebServer','Worker']),
+            wait = dict(default=True, type='bool', required=False)
         ),
     )
     module = AnsibleModule(argument_spec=argument_spec,
@@ -311,6 +329,7 @@ def main():
     tags = module.params['tags']
     option_settings = module.params['option_settings']
     options_to_remove = module.params['options_to_remove']
+    wait = module.params['wait']
 
     tier_type = 'Standard'
     tier_name = module.params['tier_name']
@@ -330,7 +349,7 @@ def main():
 
     if state == 'list':
         try:
-            env = describe_env(ebs, app_name, env_name, [])
+            env = describe_env(ebs, app_name, env_name)
             result = dict(changed=False, env=[] if env is None else env)
         except ClientError, e:
             module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
@@ -360,7 +379,10 @@ def main():
                                                   OptionSettings=option_settings,
                                                   Tier={'Name':tier_name, 'Type':tier_type, 'Version':'1.0'}))
 
-            env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
+            wait_func = status_is_ready
+            if not wait:
+                wait_func = status_is_any
+            env = wait_for(ebs, app_name, env_name, wait_timeout, wait_func)
             result = dict(changed=True, env=env)
         except ClientError, e:
             if 'Environment %s already exists' % env_name in e.message:
@@ -370,7 +392,7 @@ def main():
 
     if update:
         try:
-            env = describe_env(ebs, app_name, env_name, [])
+            env = describe_env(ebs, app_name, env_name)
             updates = update_required(ebs, env, module.params)
             if len(updates) > 0:
                 ebs.update_environment(**filter_empty(
@@ -380,20 +402,32 @@ def main():
                                        Description=description,
                                        OptionSettings=option_settings))
 
-                env = wait_for(ebs, app_name, env_name, wait_timeout,
-                         lambda environment: status_is_ready(environment) and
-                           version_is_updated(version_label, environment))
-
+                def wait_func(environment):
+                    return status_is_ready(environment) and version_is_updated(version_label, environment)
+                if not wait:
+                    wait_func = status_is_any
+                env = wait_for(ebs, app_name, env_name, wait_timeout, wait_func)
                 result = dict(changed=True, env=env, updates=updates)
             else:
                 result = dict(changed=False, env=env)
         except ClientError, e:
             module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
 
+    if state == 'wait-ready':
+        try:
+            env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
+            result = dict(changed=True, env=env)
+        except ClientError, e:
+            module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
+
     if state == 'absent':
         try:
             ebs.terminate_environment(EnvironmentName=env_name)
-            env = wait_for(ebs, app_name, env_name, wait_timeout, terminated)
+            wait_func = terminated
+            if not wait:
+                wait_func = status_is_any
+            env = describe_env(ebs, app_name, env_name)
+            env = wait_for(ebs, app_name, env_name, wait_timeout, wait_func)
             result = dict(changed=True, env=env)
         except ClientError, e:
             if 'No Environment found for EnvironmentName = \'%s\'' % env_name in e.message:
