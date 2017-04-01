@@ -32,7 +32,7 @@ options:
       - describes the version
     required: false
     default: null
-  delete_soure:
+  delete_source:
     description:
       - Set to true to delete the source bundle from your storage bucket.
     required: false
