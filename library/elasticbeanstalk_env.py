@@ -289,7 +289,8 @@ def main():
             option_settings = dict(type='list',default=[]),
             tags = dict(type='dict',default=dict()),
             options_to_remove = dict(type='list',default=[]),
-            tier_name = dict(default='WebServer', choices=['WebServer','Worker'])
+            tier_name = dict(default='WebServer', choices=['WebServer','Worker']),
+            ignored_statuses = dict(type='list',default=[])
         ),
     )
     module = AnsibleModule(argument_spec=argument_spec,
@@ -311,6 +312,7 @@ def main():
     tags = module.params['tags']
     option_settings = module.params['option_settings']
     options_to_remove = module.params['options_to_remove']
+    ignored_statuses = module.params['ignored_statuses']
 
     tier_type = 'Standard'
     tier_name = module.params['tier_name']
@@ -330,7 +332,7 @@ def main():
 
     if state == 'list':
         try:
-            env = describe_env(ebs, app_name, env_name, [])
+            env = describe_env(ebs, app_name, env_name, ignored_statuses)
             result = dict(changed=False, env=[] if env is None else env)
         except ClientError, e:
             module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
