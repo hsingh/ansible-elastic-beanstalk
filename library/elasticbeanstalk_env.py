@@ -184,7 +184,7 @@ def terminated(env):
     return env["Status"] == "Terminated"
 
 def describe_env(ebs, app_name, env_name, ignored_statuses):
-    environment_names = [] if env_name is None else [env_name]
+    environment_names = [env_name] if not isinstance(env_name, list) else env_name
 
     result = ebs.describe_environments(ApplicationName=app_name, EnvironmentNames=environment_names)
     envs = result["Environments"]
