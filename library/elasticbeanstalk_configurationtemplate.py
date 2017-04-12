@@ -63,7 +63,7 @@ try:
 except ImportError:
     HAS_BOTO3 = False
 
-from elasticbeanstalk_configurationtemplate import new_or_changed_option
+from elasticbeanstalk_option_settings import new_or_changed_option
 
 from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.ec2 import boto3_conn, ec2_argument_spec, get_aws_connection_info
