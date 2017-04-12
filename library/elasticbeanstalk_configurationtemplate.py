@@ -56,20 +56,26 @@ RETURN = '''
 TODO
 '''
 
-
 try:
     import boto3
+    from botocore.exceptions import ClientError
     HAS_BOTO3 = True
 except ImportError:
     HAS_BOTO3 = False
 
-from elasticbeanstalk_option_settings import new_or_changed_option
 
 from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.ec2 import boto3_conn, ec2_argument_spec, get_aws_connection_info
 
-def describe_configurationtemplate(ebs, app_name, template_name):
-    versions = list_versions(ebs, app_name, template_name)
+
+def describe_configurationtemplate(ebs, app_name, template_name, module):
+    try:
+        versions = list_configurationtemplate(ebs, app_name, template_name)
+    except ClientError, e:
+        if e.message.endswith("No Configuration Template named '{}/{}' found.".format(app_name, template_name)):
+            versions = []
+        else:
+            module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
 
     return None if len(versions) != 1 else versions[0]
 
@@ -81,43 +87,52 @@ def list_configurationtemplate(ebs, app_name, template_name):
 
     return settings["ConfigurationSettings"]
 
+def new_or_changed_option(options, setting):
+    for option in options:
+        if option["Namespace"] == setting["Namespace"] and \
+            option["OptionName"] == setting["OptionName"]:
+
+            if (setting['Namespace'] in ['aws:autoscaling:launchconfiguration','aws:ec2:vpc'] and \
+                setting['OptionName'] in ['SecurityGroups', 'ELBSubnets', 'Subnets'] and \
+                set(setting['Value'].split(',')).issubset(setting['Value'].split(','))) or \
+                option["Value"] == setting["Value"]:
+                return None
+            else:
+                return (option["Namespace"] + ':' + option["OptionName"], option["Value"], setting["Value"])
+
+    return (setting["Namespace"] + ':' + setting["OptionName"], "<NEW>", setting["Value"])
 
 def update_required(ebs, configurationtemplate, params):
     updates = []
     if params["solution_stack_name"] and configurationtemplate["SolutionStackName"] != params["solution_stack_name"]:
         updates.append(('SolutionStackName', configurationtemplate['SolutionStackName'], params['solution_stack_name']))
 
-    if params["version_label"] and configurationtemplate["VersionLabel"] != params["version_label"]:
-        updates.append(('VersionLabel', configurationtemplate['VersionLabel'], params['version_label']))
-
-    if params["version_label"] and configurationtemplate["VersionLabel"] != params["version_label"]:
-        updates.append(('VersionLabel', configurationtemplate['VersionLabel'], params['version_label']))
+    if params["description"] and configurationtemplate["Description"] != params["description"]:
+        updates.append(('Description', configurationtemplate['Description'], params['description']))
 
     for setting in params["option_settings"]:
-        change = new_or_changed_option(options, setting)
+        change = new_or_changed_option(configurationtemplate['OptionSettings'], setting)
         if change is not None:
             updates.append(change)
 
     return updates
 
-def check_configurationtemplate(ebs, version, module):
-    app_name = module.params['app_name']
-    version_label = module.params['version_label']
-    description = module.params['description']
+def check_configurationtemplate(ebs, configurationtemplate, module):
     state = module.params['state']
-
     result = {}
 
-    if state == 'present' and version is None:
-        result = dict(changed=True, output = "Version would be created")
-    elif state == 'present' and version.get("Description", None) != description:
-        result = dict(changed=True, output = "Version would be updated", version=version)
-    elif state == 'present' and version.get("Description", None) == description:
-        result = dict(changed=False, output="Version is up-to-date", version=version)
-    elif state == 'absent' and version is None:
-        result = dict(changed=False, output="Version does not exist")
-    elif state == 'absent' and version is not None:
-        result = dict(changed=True, output="Version will be deleted", version=version)
+    if state == 'present' and configurationtemplate is None:
+        result = dict(changed=True, output = "Configuration Template would be created")
+    elif state == 'present' and configurationtemplate is not None:
+        updates = update_required(ebs, env, module.params)
+        if len(updates) > 0:
+            result = dict(changed=True, output = "Configuration Template would be updated", configurationtemplate=configurationtemplate, updates=updates)
+        else:
+            result = dict(changed=False, output="Configuration Template is up-to-date", configurationtemplate=configurationtemplate)
+    elif state == 'absent' and configurationtemplate is None:
+        result = dict(changed=False, output="Configuration Template does not exist")
+    elif state == 'absent' and configurationtemplate is not None:
+        result = dict(changed=True, output="Configuration Template will be deleted", configurationtemplate=configurationtemplate)
 
     module.exit_json(**result)
 
@@ -149,6 +164,7 @@ def main():
     tags = module.params['tags']
     option_settings = module.params['option_settings']
 
+    update = False
     result = {}
     region, ec2_url, aws_connect_params = get_aws_connection_info(module, boto3=True)
 
@@ -159,35 +175,34 @@ def main():
         module.fail_json(msg='region must be specified')
 
 
-    version = describe_version(ebs, app_name, version_label)
+    configurationtemplate = describe_configurationtemplate(ebs, app_name, template_name, module)
 
     if module.check_mode and state != 'list':
-        check_version(ebs, version, module)
-        module.fail_json(msg='ASSERTION FAILURE: check_version() should not return control.')
+        check_configurationtemplate(ebs, configurationtemplate, module)
+        module.fail_json(msg='ASSERTION FAILURE: check_configurationtemplate() should not return control.')
 
     if state == 'list':
         try:
-            configurationtemplate = describe_configurationtemplate(ebs, app_name, template_name)
+            configurationtemplate = describe_configurationtemplate(ebs, app_name, template_name, module)
             result = dict(changed=False, configurationtemplate=[] if configurationtemplate is None else configurationtemplate)
         except ClientError, e:
             module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
 
     if state == 'details':
         try:
-            configurationtemplate = describe_configuration_template(ebs, app_name, template_name)
+            configurationtemplate = describe_configurationtemplate(ebs, app_name, template_name, module)
             result = dict(changed=False, configurationtemplate=configurationtemplate)
         except ClientError, e:
             module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
 
     if module.check_mode and (state != 'list' or state != 'details'):
-        check_env(ebs, app_name, env_name, module)
-        module.fail_json('ASSERTION FAILURE: check_version() should not return control.')
+        check_configurationtemplate(ebs, configurationtemplate, module)
+        module.fail_json('ASSERTION FAILURE: check_configurationtemplate() should not return control.')
 
     if state == 'present':
         try:
             tags_to_apply = [ {'Key':k,'Value':v} for k,v in tags.iteritems()]
             configurationtemplate = ebs.create_configuration_template(**filter_empty(ApplicationName=app_name,
-                                                  VersionLabel=version_label,
                                                   TemplateName=template_name,
                                                   Tags=tags_to_apply,
                                                   SolutionStackName=solution_stack_name,
@@ -195,11 +210,14 @@ def main():
                                                   OptionSettings=option_settings))
             result = dict(changed=True, configurationtemplate=configurationtemplate)
         except ClientError, e:
-            module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
+            if e.message.endswith('Configuration Template {} already exists.'.format(template_name)):
+                update = True
+            else:
+                module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
 
     if update:
         try:
-            env = describe_configuration_template(ebs, app_name, template_name)
+            env = describe_configurationtemplate(ebs, app_name, template_name, module)
             updates = update_required(ebs, env, module.params)
             if len(updates) > 0:
                 configurationtemplate = ebs.update_configuration_template(**filter_empty(
