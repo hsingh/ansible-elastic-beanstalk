@@ -3,13 +3,18 @@
 DOCUMENTATION = '''
 ---
 module: elasticbeanstalk_configuration_template
-short_description: create, update, delete and list beanstalk application versions
+short_description: create, update, delete and list beanstalk configuration templates
 description:
     - creates, updates, deletes beanstalk configuration templates. Can also list versions associated with application
 options:
   app_name:
     description:
-      - name of the configuration template you wish to manage
+      - name of the beanstalk application of the configuration template you wish to manage
+    required: true
+    default: null
+  template_name:
+    description:
+      - name of the configuration template
     required: true
     default: null
   description:
@@ -17,19 +22,14 @@ options:
       - describes this configuration template
     required: false
     default: null
-  template_name:
-    description:
-      - name of the configuration template
-    required: false
-    default: null
   solution_stack_name:
     description:
-      - TODO
+      - Name of solution stack to use as a base for this configuration template
     required: false
     default: null
   option_settings:
     description:
-      - 'A dictionary array of settings to add of the form: { Namespace: ..., OptionName: ... , Value: ... }. If specified, AWS Elastic Beanstalk sets the specified configuration options to the requested value in the configuration set.'
+      - 'A dictionary array of settings to add of the form: { Namespace: ..., OptionName: ... , Value: ... }. This can be overridden by specific envs.
     required: false
     default: null
   tags:
@@ -49,11 +49,57 @@ extends_documentation_fragment: aws
 '''
 
 EXAMPLES = '''
-TODO
+# Create or update environment
+- elasticbeanstalk_configuration_template:
+    region: us-east-1
+    app_name: Sample App
+    solution_stack_name: "64bit Amazon Linux 2014.09 v1.2.1 running Docker 1.5.0"
+    option_settings:
+      - Namespace: aws:elasticbeanstalk:application:environment
+        OptionName: PARAM1
+        Value: bar
+      - Namespace: aws:elasticbeanstalk:application:environment
+        OptionName: PARAM2
+        Value: foobar
+    tags:
+      Name: Sample App
+  register: env
+
+# Delete environment
+- elasticbeanstalk_configuration_template:
+    app_name: Sample App
+    template_name: sampleApp-template
+    state: absent
+    region: us-west-2
 '''
 
 RETURN = '''
-TODO
+elasticbeanstalk_configuration_template:
+    description: configuration template
+    returned: success and when state != list
+    type: dict
+    sample: {
+        "ApplicationName": "app-name",
+        "DateCreated": "2016-05-20T19:03:05.090000+00:00",
+        "DateUpdated": "2016-12-09T16:23:55.915000+00:00",
+        "TemplateName": "template-name-qa",
+        "SolutionStackName": "64bit Amazon Linux 2016.03 v2.1.0 running Docker 1.9.1",
+        "OptionSettings": [
+            // included when state == detail
+            {
+                "Namespace": "aws:autoscaling:asg",
+                "OptionName": "Availability Zones",
+                "ResourceName": "AWSEBAutoScalingGroup",
+                "Value": "Any"
+            }
+            ...
+        ]
+    }
+output:
+    description: message indicating what change will occur
+    returned: in check mode
+    type: string
+    sample: Configuration Template is up-to-date
 '''
 
 try:
