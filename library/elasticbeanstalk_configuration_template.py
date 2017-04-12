@@ -233,7 +233,8 @@ def main():
 
     if state == 'absent':
         try:
-            ebs.delete_configuration_template(EnvironmentName=env_name)
+            ebs.delete_configuration_template(ApplicationName=app_name,
+                                       TemplateName=template_name)
             result = dict(changed=True)
         except ClientError, e:
             module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
