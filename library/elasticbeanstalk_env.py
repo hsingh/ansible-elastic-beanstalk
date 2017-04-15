@@ -144,6 +144,8 @@ output:
     sample: Environment is up-to-date
 '''
 
+import json
+
 try:
     import boto3
     from botocore.exceptions import ClientError
@@ -245,6 +247,17 @@ def new_or_changed_option(options, setting):
                 set(setting['Value'].split(',')).issubset(setting['Value'].split(','))) or \
                 option["Value"] == setting["Value"]:
                 return None
+            elif setting['Namespace'] in ['aws:elasticbeanstalk:healthreporting:system'] and \
+                setting['OptionName'] in ['ConfigDocument']:
+                current = option['Value'] if 'Value' in option else None
+                value_to_set = setting['Value'] if 'Value' in setting else None 
+                if not current and not value_to_set:
+                    return None
+                else:
+                    if json.loads(value_to_set) == json.loads(current):
+                        return None
+                    else:
+                        return (option["Namespace"] + ':' + option["OptionName"], option["Value"], setting["Value"])
             else:
                 return (option["Namespace"] + ':' + option["OptionName"], option["Value"], setting["Value"])
 
