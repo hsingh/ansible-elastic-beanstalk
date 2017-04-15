@@ -171,7 +171,7 @@ def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
         time.sleep(15)
 
 def version_is_updated(version_label, env):
-    return version_label == ""  or env["VersionLabel"] == version_label
+    return not version_label or version_label.strip() == "" or env["VersionLabel"] == version_label
 
 def status_is_ready(env):
     return env["Status"] == "Ready"
