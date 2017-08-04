@@ -33,6 +33,7 @@ The example playbook demonstrates how to create an application and version and u
         elasticbeanstalk_app:
           region: us-east-1
           app_name: Sample App
+          description: "Sample App Description"
           state: present
         register: app
 
