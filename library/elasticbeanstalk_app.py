@@ -181,7 +181,10 @@ def main():
             result = dict(changed=True, app=app)
         else:
             if app.get("Description", None) != description:
-                ebs.update_application(ApplicationName=app_name,
+                if not description:
+                    ebs.update_application(ApplicationName=app_name)
+                else:
+                    ebs.update_application(ApplicationName=app_name,
                                        Description=description)
                 app = describe_app(ebs, app_name)
 
