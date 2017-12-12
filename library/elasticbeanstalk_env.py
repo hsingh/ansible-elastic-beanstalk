@@ -246,7 +246,8 @@ def new_or_changed_option(options, setting):
                 ('Value' in option and option["Value"] == setting["Value"]):
                 return None
             else:
-                return (option["Namespace"] + ':' + option["OptionName"], option["Value"], setting["Value"])
+                if 'Value' in option:
+                    return (option["Namespace"] + ':' + option["OptionName"], option["Value"], setting["Value"])
 
     return (setting["Namespace"] + ':' + setting["OptionName"], "<NEW>", setting["Value"])
 
