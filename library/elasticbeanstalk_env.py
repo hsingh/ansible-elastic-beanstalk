@@ -49,17 +49,17 @@ options:
     default: null
   vpc:
     description:
-      - id or name of the vpc. if not found failure. if found add to option_settings
+      - id or name of vpc. If not found, a ValueError is raised. If found, the vpc_id is added to option_settings
     required: false
     default: null
   vpc_subnets:
     description:
-      - comma seperated list of ids or names from vpc subnets. looks for subnets in previous defined vpc. if no vpc defined it looks over all vpc. if not found failure. if found add to option_settings
+      - comma seperated list of ids or names of vpc subnets. If no subnet is found, a ValueError is raised. If found, but vpc_id is not the same as vpc, a ValueError is raised, else vpc_subnet_id is added to option_settings.
     required: false
     default: null
   option_settings:
     description:
-      - 'A dictionary array of settings to add of the form: { Namespace: ..., OptionName: ... , Value: ... }. If specified, AWS Elastic Beanstalk sets the specified configuration options to the requested value in the configuration set for the new environment. These override the values obtained from the solution stack or the configuration template'
+      - 'An array of dictionaries of the form: { Namespace: ..., OptionName: ... , Value: ... }. If specified, AWS Elastic Beanstalk sets the specified configuration options to the requested value in the configuration set for the new environment. These override the values obtained from the solution stack or the configuration template'
     required: false
     default: null
   tags:
@@ -93,7 +93,7 @@ EXAMPLES = '''
     version_label: Sample Application
     solution_stack_name: "64bit Amazon Linux 2014.09 v1.2.1 running Docker 1.5.0"
     vpc: VPC_NAME
-    vpc_subnets: SUBNET_NAME1, SUBNET_NAME2
+    vpc_subnets: SUBNET_NAME1,SUBNET_NAME2
     option_settings:
       - Namespace: aws:elasticbeanstalk:application:environment
         OptionName: PARAM1
