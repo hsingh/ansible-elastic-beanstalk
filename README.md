@@ -56,6 +56,8 @@ The example playbook demonstrates how to create an application and version and u
           env_name: sampleApp-env
           version_label: Sample Application
           solution_stack_name: "64bit Amazon Linux 2014.09 v1.2.1 running Docker 1.5.0"
+          vpc: VPC_NAME
+          vpc_subnets: SUBNET_NAME1,SUBNET_NAME2          
           option_settings:
             - Namespace: aws:elasticbeanstalk:application:environment
               OptionName: PARAM1
