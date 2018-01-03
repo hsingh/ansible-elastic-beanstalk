@@ -295,52 +295,48 @@ def filter_empty(**kwargs):
     return {k:v for k,v in kwargs.items() if v}
 
 
-def getVpcId(region, vpc, option_settings, module):
-    module.debug("searching for vpc_id=" + vpc)
+def getVpcId(region, vpc, option_settings, ansible_module):
+    ansible_module.debug("searching for vpc_id='{}'".format(vpc))
     ec2 = boto3.resource('ec2', region_name=region)
     try:
         vpc_id = list(ec2.vpcs.filter(VpcIds=[vpc]))[0].vpc_id
     except ClientError:
-        module.debug("searching for vpc_name=" + vpc)
+        ansible_module.debug("searching for vpc_name='{}'".format(vpc))
         filters = [{'Name':'tag:Name', 'Values':[vpc]}]
         try:
             vpc_id = list(ec2.vpcs.filter(Filters=filters))[0].vpc_id
         except ClientError:
-            raise ValueError("VPC '" + vpc + "' not found")
+            raise ValueError("VPC '{}' not found".format(vpc))
     option_settings.append({'Namespace':'aws:ec2:vpc', 'OptionName':'VPCId', 'Value':vpc_id})
     return vpc_id
 
-def checkVpcSubnetIds(region, vpc_subnets, vpc_id, option_settings, module):
-    module.debug("searching for vpc_subnet_ids=" + str(vpc_subnets))
+def checkVpcSubnetIds(region, vpc_subnets, vpc_id, option_settings, ansible_module):
+    ansible_module.debug("searching for vpc_subnet_ids='{}'".format(vpc_subnets))
     ec2 = boto3.resource('ec2', region_name=region)
     try:
-        subnetsTmp = list(ec2.subnets.filter(SubnetIds=vpc_subnets))
+        subnets_tmp = list(ec2.subnets.filter(SubnetIds=vpc_subnets))
     except ClientError:
-        module.debug("searching for vpc_subnet_names=" + str(vpc_subnets))
+        ansible_module.debug("searching for vpc_subnet_names='{}'".format(vpc_subnets))
         filters=[{'Name': 'tag:Name', 'Values': vpc_subnets}]
         try:
-            subnetsTmp = list(ec2.subnets.filter(Filters=filters))
+            subnets_tmp = list(ec2.subnets.filter(Filters=filters))
         except ClientError:
-            raise ValueError("VPC Subnets '" + str(vpc_subnets) + "' not found")
+            raise ValueError("VPC Subnets '{}' not found".format(vpc_subnets))
         
     if vpc_id:
-        for vpcSubnet in subnetsTmp:
-            if vpcSubnet.vpc_id != vpc_id:
-                raise ValueError("VPC Subnets '" + vpcSubnet.vpc_id + "' not part of VPC '"+ vpc_id +"'")
+        for vpc_subnet in subnets_tmp:
+            if vpc_subnet.vpc_id != vpc_id:
+                raise ValueError("VPC Subnets '{}' not part of VPC '{}'".format(vpc_subnet.vpc_id, vpc_id))
     else:
-        option_settings.append({'Namespace':'aws:ec2:vpc', 'OptionName':'VPCId', 'Value':subnetsTmp[0].vpc_id})
+        option_settings.append({'Namespace':'aws:ec2:vpc', 'OptionName':'VPCId', 'Value':subnets_tmp[0].vpc_id})
         
-    subnetIds = []
-    for vpcSubnet in subnetsTmp:
-        subnetIds = subnetIds + [vpcSubnet.subnet_id]
+    subnetIds = [vpc_subnet.subnet_id for vpc_subnet in subnets_tmp]
     
     if not subnetIds:
-        raise ValueError("VPC Subnets '" + str(vpc_subnets) + "' not found")
+        raise ValueError("VPC Subnets '{}' not found".format(vpc_subnets))
     
     option_settings.append({'Namespace':'aws:ec2:vpc', 'OptionName':'Subnets', 'Value':','.join(subnetIds)})
-    
-    return
-    
+       
 def main():
     argument_spec = ec2_argument_spec()
     argument_spec.update(dict(
