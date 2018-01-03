@@ -163,7 +163,8 @@ try:
 except ImportError:
     HAS_BOTO3 = False
 
-from ansible.module_utils.basic import *
+import time
+from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.ec2 import boto3_conn, ec2_argument_spec, get_aws_connection_info, camel_dict_to_snake_dict
 
 def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
@@ -206,14 +207,15 @@ def describe_env(ebs, app_name, env_name, ignored_statuses):
 
     if not isinstance(envs, list): return None
 
-    if len(envs) == 0: return None
+    if not envs: 
+        return
 
-    print(envs)
     for env in envs:
-        if "Status" in env and env["Status"] in ignored_statuses:
-                envs.remove(env)
+        if env.get("Status") in ignored_statuses:
+            envs.remove(env)
 
-    if len(envs) == 0: return None
+    if not envs: 
+        return
 
     return envs if env_name is None else envs[0]
 
@@ -223,12 +225,12 @@ def describe_env_config_settings(ebs, app_name, env_name):
 
     if not isinstance(envs, list): return None
 
-    print(envs)
     for env in envs:
-        if "Status" in env and env["Status"] in ["Terminated","Terminating"]:
-                envs.remove(env)
+        if env.get("Status") in ["Terminated","Terminating"]:
+            envs.remove(env)
 
-    if len(envs) == 0: return None
+    if not envs:
+        return
 
     return envs if env_name is None else envs[0]
 
@@ -411,14 +413,14 @@ def main():
             env = describe_env(ebs, app_name, env_name, [])
             result = dict(changed=False, env=[] if env is None else env)
         except ClientError as e:
-            module.fail_json(msg=e, **camel_dict_to_snake_dict(e))
+            module.fail_json(msg=str(e), **camel_dict_to_snake_dict(e.response))
 
     if state == 'details':
         try:
             env = describe_env_config_settings(ebs, app_name, env_name)
             result = dict(changed=False, env=env)
         except ClientError as e:
-            module.fail_json(msg=e, **camel_dict_to_snake_dict(e.response))
+            module.fail_json(msg=str(e), **camel_dict_to_snake_dict(e.response))
 
     if module.check_mode and (state != 'list' or state != 'details'):
         check_env(ebs, app_name, env_name, module)
@@ -444,7 +446,7 @@ def main():
             if 'Environment %s already exists' % env_name in e.args:
                 update = True
             else:
-                module.fail_json(msg=e, **camel_dict_to_snake_dict(e.response))
+                module.fail_json(msg=str(e), **camel_dict_to_snake_dict(e.response))
 
     if update:
         try:
@@ -466,7 +468,7 @@ def main():
             else:
                 result = dict(changed=False, env=env)
         except ClientError as e:
-            module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
+            module.fail_json(msg=str(e), **camel_dict_to_snake_dict(e.response))
 
     if state == 'absent':
         try:
@@ -477,7 +479,7 @@ def main():
             if 'No Environment found for EnvironmentName = \'%s\'' % env_name in e.message:
                 result = dict(changed=False, output='Environment not found')
             else:
-                module.fail_json(msg=e.message, **camel_dict_to_snake_dict(e.response))
+                module.fail_json(msg=str(e), **camel_dict_to_snake_dict(e.response))
 
     module.exit_json(**result)
 
