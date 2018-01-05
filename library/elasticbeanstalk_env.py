@@ -69,6 +69,11 @@ options:
     required: false
     default: present
     choices: ['absent','present','list','details']
+  force_terminate:
+    description:
+      - Terminates the target environment even if another environment in the same group is dependent on it. Option is used only when state=absent
+    required: false
+    default: False
 
 author: Harpreet Singh
 extends_documentation_fragment: aws
@@ -98,6 +103,7 @@ EXAMPLES = '''
     app_name: Sample App
     env_name: sampleApp-env
     state: absent
+    force_terminate: True
     wait_timeout: 360
     region: us-west-2
 '''
@@ -290,7 +296,8 @@ def main():
             option_settings = dict(type='list',default=[]),
             tags = dict(type='dict',default=dict()),
             options_to_remove = dict(type='list',default=[]),
-            tier_name = dict(default='WebServer', choices=['WebServer','Worker'])
+            tier_name = dict(default='WebServer', choices=['WebServer','Worker']),
+            force_terminate = dict(type='bool', required=False, default=False)
         ),
     )
     module = AnsibleModule(argument_spec=argument_spec,
@@ -312,6 +319,7 @@ def main():
     tags = module.params['tags']
     option_settings = module.params['option_settings']
     options_to_remove = module.params['options_to_remove']
+    force_terminate = module.params['force_terminate']
 
     tier_type = 'Standard'
     tier_name = module.params['tier_name']
@@ -393,7 +401,7 @@ def main():
 
     if state == 'absent':
         try:
-            ebs.terminate_environment(EnvironmentName=env_name)
+            ebs.terminate_environment(EnvironmentName=env_name, ForceTerminate=force_terminate)
             env = wait_for(ebs, app_name, env_name, wait_timeout, terminated)
             result = dict(changed=True, env=env)
         except ClientError, e:
