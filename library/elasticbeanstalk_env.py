@@ -397,10 +397,10 @@ def main():
 
     if vpc:
         vpc_id = getVpcId(region, vpc, option_settings, module)
+        module.debug("found vpc_id='{}'".format(vpc_id))
     else:
         vpc_id = None
     
-    module.debug("found vpc_id="+vpc_id)
 
     if vpc_subnets:
         checkVpcSubnetIds(region, vpc_subnets.split(','), vpc_id, option_settings, module)
