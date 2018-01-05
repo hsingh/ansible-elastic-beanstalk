@@ -373,7 +373,7 @@ def main():
             env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
             result = dict(changed=True, env=env)
         except ClientError as e:
-            if 'Environment %s already exists' % env_name in e.args:
+            if 'Environment %s already exists' % env_name in str(e):
                 update = True
             else:
                 module.fail_json(msg=str(e), **camel_dict_to_snake_dict(e.response))
@@ -406,8 +406,8 @@ def main():
             env = wait_for(ebs, app_name, env_name, wait_timeout, terminated)
             result = dict(changed=True, env=env)
         except ClientError as e:
-            if 'No Environment found for EnvironmentName = \'%s\'' % env_name in e.message:
-                result = dict(changed=False, output='Environment not found')
+            if 'No Environment found for EnvironmentName = \'%s\'' % env_name in str(e):
+                result = dict(changed=False, warnings='Environment {} not found'.format(env_name))
             else:
                 module.fail_json(msg=str(e), **camel_dict_to_snake_dict(e.response))
 
