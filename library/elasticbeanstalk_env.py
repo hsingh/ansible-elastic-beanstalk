@@ -169,7 +169,7 @@ def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
         time.sleep(15)
 
 def version_is_updated(version_label, env):
-    return version_label == ""  or env["VersionLabel"] == version_label
+    return version_label == ""  or env.get("VersionLabel", "") == version_label
 
 def status_is_ready(env):
     return env["Status"] == "Ready"
@@ -215,8 +215,8 @@ def describe_env_config_settings(ebs, app_name, env_name):
 
 def update_required(ebs, env, params):
     updates = []
-    if params["version_label"] and env["VersionLabel"] != params["version_label"]:
-        updates.append(('VersionLabel', env['VersionLabel'], params['version_label']))
+    if params["version_label"] and env.get("VersionLabel", "") != params["version_label"]:
+        updates.append(('VersionLabel', env.get('VersionLabel', ""), params['version_label']))
 
     if params.get("template_name", None) and not env.has_key("TemplateName"):
         updates.append(('TemplateName', None, params['template_name']))
