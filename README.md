@@ -54,7 +54,7 @@ The example playbook demonstrates how to create an application and version and u
           region: us-east-1
           app_name: Sample App
           env_name: sampleApp-env
-          version_label: Sample Application
+          version_label: Sample Version
           solution_stack_name: "64bit Amazon Linux 2014.09 v1.2.1 running Docker 1.5.0"
           option_settings:
             - Namespace: aws:elasticbeanstalk:application:environment
