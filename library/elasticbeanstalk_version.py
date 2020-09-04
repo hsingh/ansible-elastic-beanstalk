@@ -138,7 +138,7 @@ def check_version(version, module):
 
 
 def filter_empty(**kwargs):
-    return {k: v for k, v in iter(kwargs.items()) if v}
+    return {key: value for key, value in kwargs.items() if value}
 
 
 def main():

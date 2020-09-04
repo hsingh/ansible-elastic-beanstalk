@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from builtins import str
 from ansible.module_utils.basic import *
 from ansible.module_utils.ec2 import boto3_conn, ec2_argument_spec, get_aws_connection_info, camel_dict_to_snake_dict
 from botocore.exceptions import ClientError
@@ -244,7 +245,7 @@ def check_env(ebs, app_name, env_name, module):
 
 
 def filter_empty(**kwargs):
-    return {k: v for k, v in iter(kwargs.items()) if v}
+    return {key: value for key, value in kwargs.items() if value}
 
 
 def main():
@@ -319,7 +320,7 @@ def main():
 
     if state == 'present':
         try:
-            tags_to_apply = [{'Key': k, 'Value': v} for k, v in iter(tags.items())]
+            tags_to_apply = [{'Key': key, 'Value': value} for key, value in tags.items()]
             ebs.create_environment(**filter_empty(ApplicationName=app_name,
                                                   EnvironmentName=env_name,
                                                   VersionLabel=version_label,
