@@ -185,7 +185,7 @@ def describe_env_config_settings(ebs, app_name, env_name):
 
 def update_required(ebs, env, params):
     updates = []
-    if 'VersionLabel' in env:
+    if 'VersionLabel' not in env:
         env['VersionLabel'] = None
     if params["version_label"] and env["VersionLabel"] != params["version_label"]:
         updates.append(('VersionLabel', env['VersionLabel'], params['version_label']))
