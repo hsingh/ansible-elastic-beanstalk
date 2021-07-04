@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
-from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.ec2 import boto3_conn, ec2_argument_spec, get_aws_connection_info
+from ansible_collections.amazon.aws.plugins.module_utils.core import AnsibleAWSModule
+from ansible_collections.amazon.aws.plugins.module_utils.ec2 import boto3_conn, get_aws_connection_info
 try:
     import boto3
     HAS_BOTO3 = True
@@ -134,25 +134,26 @@ def filter_empty(**kwargs):
 
 
 def main():
-    argument_spec = ec2_argument_spec()
-    argument_spec.update(dict(
-        app_name=dict(type='str', required=False),
+    argument_spec = dict(
+        name=dict(type='str', required=False),
         description=dict(type='str', required=False),
-        state=dict(choices=['present', 'absent', 'list'], default='present')
-    ),
+        state=dict(default='present', choices=['present', 'absent', 'list'])
     )
-    module = AnsibleModule(argument_spec=argument_spec, supports_check_mode=True)
-    if not HAS_BOTO3:
-        module.fail_json(msg='boto3 required for this module')
-    app_name = module.params['app_name']
+    module = AnsibleAWSModule(argument_spec=argument_spec, supports_check_mode=True)
+
+    app_name = module.params['name']
     description = module.params['description']
     state = module.params['state']
+
     if app_name is None:
         if state != 'list':
             module.fail_json(msg='Module parameter "app_name" is required if "state" is not "list"')
+
     region, ec2_url, aws_connect_params = get_aws_connection_info(module, boto3=True)
+
     if region is None:
         module.fail_json(msg='region must be specified')
+
     ebs = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
                      region=region, endpoint=ec2_url, **aws_connect_params)
 
