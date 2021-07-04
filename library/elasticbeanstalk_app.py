@@ -111,7 +111,7 @@ def describe_app(aws_eb, app_name):
     elif len(app['Applications']) > 1:
         raise MoreThanOneApplicationFound(app_name)
     else:
-        return app['Applications']
+        return app['Applications'][0]
 
 
 def list_apps(aws_eb):
