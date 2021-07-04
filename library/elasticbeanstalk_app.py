@@ -99,16 +99,16 @@ output:
 '''
 
 
-def describe_app(ebs, app_name):
-    apps = list_apps(ebs, app_name)
+def describe_app(aws_eb, app_name):
+    apps = list_apps(aws_eb, app_name)
     return None if len(apps) != 1 else apps[0]
 
 
-def list_apps(ebs, app_name):
+def list_apps(aws_eb, app_name):
     if app_name is not None:
-        apps = ebs.describe_applications(ApplicationNames=[app_name])
+        apps = aws_eb.describe_applications(ApplicationNames=[app_name])
     else:
-        apps = ebs.describe_applications()
+        apps = aws_eb.describe_applications()
     return apps.get("Applications", [])
 
 
@@ -154,23 +154,23 @@ def main():
     if region is None:
         module.fail_json(msg='region must be specified')
 
-    ebs = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
+    aws_eb = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
                      region=region, endpoint=ec2_url, **aws_connect_params)
 
-    app = describe_app(ebs, app_name)
+    app = describe_app(aws_eb, app_name)
     if module.check_mode and state != 'list':
         check_app(app, module)
         module.fail_json(msg='ASSERTION FAILURE: check_app() should not return control.')
     if state == 'present':
         if app is None:
-            ebs.create_application(**filter_empty(ApplicationName=app_name, Description=description))
-            app = describe_app(ebs, app_name)
+            aws_eb.create_application(**filter_empty(ApplicationName=app_name, Description=description))
+            app = describe_app(aws_eb, app_name)
             result = dict(changed=True, app=app)
         else:
             if app.get("Description", None) != description:
-                ebs.update_application(ApplicationName=app_name,
+                aws_eb.update_application(ApplicationName=app_name,
                                        Description=description)
-                app = describe_app(ebs, app_name)
+                app = describe_app(aws_eb, app_name)
                 result = dict(changed=True, app=app)
             else:
                 result = dict(changed=False, app=app)
@@ -178,10 +178,10 @@ def main():
         if app is None:
             result = dict(changed=False, output='Application not found')
         else:
-            ebs.delete_application(ApplicationName=app_name)
+            aws_eb.delete_application(ApplicationName=app_name)
             result = dict(changed=True, app=app)
     else:
-        apps = list_apps(ebs, app_name)
+        apps = list_apps(aws_eb, app_name)
         result = dict(changed=False, apps=apps)
     module.exit_json(**result)
 
