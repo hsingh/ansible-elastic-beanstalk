@@ -109,7 +109,7 @@ def describe_app(aws_eb, app_name, module=None):
     if len(app) == 0:
         raise ApplicationNotFound(app_name)
     elif len(app) > 1:
-        raise MoreThanOneApplicationFound(app_name)
+        #raise MoreThanOneApplicationFound(app_name)
         result = dict(changed=False, output="More than one in get", app=app)
         module.exit_json(**result)
     else:
