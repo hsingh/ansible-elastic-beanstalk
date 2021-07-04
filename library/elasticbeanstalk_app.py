@@ -200,7 +200,7 @@ def main():
             aws_eb.delete_application(application_name=app_name)
             result = dict(changed=True, app=app)
     else:
-        apps = list_apps(aws_eb, app_name)
+        apps = list_apps(aws_eb)
         result = dict(changed=False, apps=apps)
     module.exit_json(**result)
 
