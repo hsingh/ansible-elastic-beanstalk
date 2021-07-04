@@ -94,16 +94,28 @@ output:
 '''
 
 
+class ApplicationNotFound(Exception):
+    def __init__(self, app_name):
+        self.message = f"There is no application defined with the name: {app_name}"
+
+
+class MoreThanOneApplicationFound(Exception):
+    def __init__(self, app_name):
+        self.message = f"More than one application has returned using the term {app_name}, please use a specific term"
+
+
 def describe_app(aws_eb, app_name):
-    apps = list_apps(aws_eb, app_name)
-    return None if len(apps) != 1 else apps[0]
-
-
-def list_apps(aws_eb, app_name):
-    if app_name is not None:
-        apps = aws_eb.describe_applications(ApplicationNames=[app_name])
+    app = aws_eb.describe_applications(application_names=[app_name])
+    if len(app) == 0:
+        raise ApplicationNotFound(app_name)
+    elif len(app) > 1:
+        raise MoreThanOneApplicationFound(app_name)
     else:
-        apps = aws_eb.describe_applications()
+        return app[0]
+
+
+def list_apps(aws_eb):
+    apps = aws_eb.describe_applications()
     return apps.get("Applications", [])
 
 
@@ -130,19 +142,15 @@ def filter_empty(**kwargs):
 
 def main():
     argument_spec = dict(
-        name=dict(type='str', required=False),
+        app_name=dict(type='str', required=False),
         description=dict(type='str', required=False),
         state=dict(default='present', choices=['present', 'absent', 'list'])
     )
     module = AnsibleAWSModule(argument_spec=argument_spec, supports_check_mode=True)
 
-    app_name = module.params['name']
+    app_name = module.params['app_name']
     description = module.params['description']
     state = module.params['state']
-
-    if app_name is None:
-        if state != 'list':
-            module.fail_json(msg='Module parameter "app_name" is required if "state" is not "list"')
 
     region, ec2_url, aws_connect_params = get_aws_connection_info(module, boto3=True)
 
@@ -152,10 +160,23 @@ def main():
     aws_eb = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
                         region=region, endpoint=ec2_url, **aws_connect_params)
 
-    app = describe_app(aws_eb, app_name)
+    if app_name is None:
+        if state != 'list':
+            module.fail_json(msg='Module parameter "app_name" is required if "state" is not "list"')
+        else:
+            app = list_apps(aws_eb)
+    else:
+        try:
+            app = describe_app(aws_eb, app_name)
+        except ApplicationNotFound:
+            app = None
+        except MoreThanOneApplicationFound as error:
+            module.fail_json(msg=error.message)
+
     if module.check_mode and state != 'list':
         check_app(app, module)
         module.fail_json(msg='ASSERTION FAILURE: check_app() should not return control.')
+
     if state == 'present':
         if app is None:
             aws_eb.create_application(**filter_empty(ApplicationName=app_name, Description=description))
@@ -163,8 +184,7 @@ def main():
             result = dict(changed=True, app=app)
         else:
             if app.get("Description", None) != description:
-                aws_eb.update_application(ApplicationName=app_name,
-                                          Description=description)
+                aws_eb.update_application(ApplicationName=app_name, Description=description)
                 app = describe_app(aws_eb, app_name)
                 result = dict(changed=True, app=app)
             else:
