@@ -104,16 +104,14 @@ class MoreThanOneApplicationFound(Exception):
         self.message = f"More than one application has returned using the term {app_name}, please use a specific term"
 
 
-def describe_app(aws_eb, app_name, module=None):
+def describe_app(aws_eb, app_name):
     app = aws_eb.describe_applications(ApplicationNames=[app_name])
-    if len(app) == 0:
+    if len(app['Applications']) == 0:
         raise ApplicationNotFound(app_name)
-    elif len(app) > 1:
-        #raise MoreThanOneApplicationFound(app_name)
-        result = dict(changed=False, output="More than one in get", app=app)
-        module.exit_json(**result)
+    elif len(app['Applications']) > 1:
+        raise MoreThanOneApplicationFound(app_name)
     else:
-        return app[0]
+        return app['Applications']
 
 
 def list_apps(aws_eb):
@@ -173,7 +171,7 @@ def main():
             app = list_apps(aws_eb)
     else:
         try:
-            app = describe_app(aws_eb, app_name, module=module)
+            app = describe_app(aws_eb, app_name)
         except ApplicationNotFound:
             app = None
         except MoreThanOneApplicationFound as error:
