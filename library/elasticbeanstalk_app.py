@@ -137,7 +137,11 @@ def check_app(app, module):
 
 
 def filter_empty(**kwargs):
-    return {key: value for key, value in kwargs.items() if value}
+    result = {}
+    for key, value in kwargs.items():
+        if value is not None:
+            result.update({key: value})
+    return result
 
 
 def main():
@@ -179,12 +183,12 @@ def main():
 
     if state == 'present':
         if app is None:
-            aws_eb.create_application(**filter_empty(ApplicationName=app_name, Description=description))
+            aws_eb.create_application(**filter_empty(application_name=app_name, description=description))
             app = describe_app(aws_eb, app_name)
             result = dict(changed=True, app=app)
         else:
             if app.get("Description", None) != description:
-                aws_eb.update_application(ApplicationName=app_name, Description=description)
+                aws_eb.update_application(application_name=app_name, description=description)
                 app = describe_app(aws_eb, app_name)
                 result = dict(changed=True, app=app)
             else:
@@ -193,7 +197,7 @@ def main():
         if app is None:
             result = dict(changed=False, output='Application not found')
         else:
-            aws_eb.delete_application(ApplicationName=app_name)
+            aws_eb.delete_application(application_name=app_name)
             result = dict(changed=True, app=app)
     else:
         apps = list_apps(aws_eb, app_name)
