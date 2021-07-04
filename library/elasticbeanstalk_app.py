@@ -2,11 +2,6 @@
 
 from ansible_collections.amazon.aws.plugins.module_utils.core import AnsibleAWSModule
 from ansible_collections.amazon.aws.plugins.module_utils.ec2 import boto3_conn, get_aws_connection_info
-try:
-    import boto3
-    HAS_BOTO3 = True
-except ImportError:
-    HAS_BOTO3 = False
 
 DOCUMENTATION = '''
 ---
@@ -155,7 +150,7 @@ def main():
         module.fail_json(msg='region must be specified')
 
     aws_eb = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
-                     region=region, endpoint=ec2_url, **aws_connect_params)
+                        region=region, endpoint=ec2_url, **aws_connect_params)
 
     app = describe_app(aws_eb, app_name)
     if module.check_mode and state != 'list':
@@ -169,7 +164,7 @@ def main():
         else:
             if app.get("Description", None) != description:
                 aws_eb.update_application(ApplicationName=app_name,
-                                       Description=description)
+                                          Description=description)
                 app = describe_app(aws_eb, app_name)
                 result = dict(changed=True, app=app)
             else:
