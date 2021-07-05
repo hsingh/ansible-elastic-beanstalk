@@ -162,12 +162,12 @@ output:
 '''
 
 
-def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
+def wait_for(aws_eb, app_name, env_name, wait_timeout, testfunc):
     timeout_time = time() + wait_timeout
 
     while True:
         try:
-            env = describe_env(ebs, app_name, env_name, [])
+            env = describe_env(aws_eb, app_name, env_name, [])
         except Exception as error:
             raise error
 
@@ -200,10 +200,10 @@ def terminated(env):
     return env["Status"] == "Terminated"
 
 
-def describe_env(ebs, app_name, env_name, ignored_statuses):
+def describe_env(aws_eb, app_name, env_name, ignored_statuses):
     environment_names = [] if env_name is None else [env_name]
 
-    result = ebs.describe_environments(ApplicationName=app_name, EnvironmentNames=environment_names)
+    result = aws_eb.describe_environments(ApplicationName=app_name, EnvironmentNames=environment_names)
     envs = result["Environments"]
 
     if not isinstance(envs, list):
@@ -219,8 +219,8 @@ def describe_env(ebs, app_name, env_name, ignored_statuses):
     return envs if env_name is None else envs[0]
 
 
-def describe_env_config_settings(ebs, app_name, env_name):
-    result = ebs.describe_configuration_settings(ApplicationName=app_name, EnvironmentName=env_name)
+def describe_env_config_settings(aws_eb, app_name, env_name):
+    result = aws_eb.describe_configuration_settings(ApplicationName=app_name, EnvironmentName=env_name)
     envs = result["ConfigurationSettings"]
 
     if not isinstance(envs, list):
@@ -236,7 +236,7 @@ def describe_env_config_settings(ebs, app_name, env_name):
     return envs if env_name is None else envs[0]
 
 
-def update_required(ebs, env, params):
+def update_required(aws_eb, env, params):
     updates = []
     if 'VersionLabel' not in env:
         env['VersionLabel'] = None
@@ -248,8 +248,8 @@ def update_required(ebs, env, params):
     elif "TemplateName" in env and env["TemplateName"] != params["template_name"]:
         updates.append(('TemplateName', env['TemplateName'], params['template_name']))
 
-    result = ebs.describe_configuration_settings(ApplicationName=params["app_name"],
-                                                 EnvironmentName=params["env_name"])
+    result = aws_eb.describe_configuration_settings(ApplicationName=params["app_name"],
+                                                    EnvironmentName=params["env_name"])
 
     options = result["ConfigurationSettings"][0]["OptionSettings"]
 
@@ -277,16 +277,16 @@ def new_or_changed_option(options, setting):
     return f"{setting['Namespace']}:{setting['OptionName']}", '<NEW>', setting['Value']
 
 
-def check_env(ebs, app_name, env_name, module):
+def check_env(aws_eb, app_name, env_name, module):
     state = module.params['state']
-    env = describe_env(ebs, app_name, env_name, ["Terminated", "Terminating"])
+    env = describe_env(aws_eb, app_name, env_name, ["Terminated", "Terminating"])
 
     result = {}
 
     if state == 'present' and env is None:
         result = dict(changed=True, output="Environment would be created")
     elif state == 'present' and env is not None:
-        updates = update_required(ebs, env, module.params)
+        updates = update_required(aws_eb, env, module.params)
         if len(updates) > 0:
             result = dict(changed=True, output="Environment would be updated", env=env, updates=updates)
         else:
@@ -343,47 +343,47 @@ def main():
     region, ec2_url, aws_connect_params = get_aws_connection_info(module, boto3=True)
     if not region:
         module.fail_json(msg='region must be specified')
-    ebs = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
-                     region=region, endpoint=ec2_url, **aws_connect_params)
+    aws_eb = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
+                        region=region, endpoint=ec2_url, **aws_connect_params)
 
     update = False
     result = {}
 
     if state == 'list':
         try:
-            env = describe_env(ebs, app_name, env_name, [])
+            env = describe_env(aws_eb, app_name, env_name, [])
             result = dict(changed=False, env=[] if env is None else env)
         except ClientError as error:
             module.fail_json(msg=str(error), **camel_dict_to_snake_dict(error.response))
 
     if state == 'details':
         try:
-            env = describe_env_config_settings(ebs, app_name, env_name)
+            env = describe_env_config_settings(aws_eb, app_name, env_name)
             result = dict(changed=False, env=env)
         except ClientError as error:
             module.fail_json(msg=str(error), **camel_dict_to_snake_dict(error.response))
 
     if module.check_mode and (state != 'list' or state != 'details'):
-        check_env(ebs, app_name, env_name, module)
+        check_env(aws_eb, app_name, env_name, module)
         module.fail_json(msg='ASSERTION FAILURE: check_version() should not return control.')
 
     if state == 'present':
         try:
             tags_to_apply = [{'Key': key, 'Value': value} for key, value in tags.items()]
-            ebs.create_environment(**filter_empty(ApplicationName=app_name,
-                                                  EnvironmentName=env_name,
-                                                  VersionLabel=version_label,
-                                                  TemplateName=template_name,
-                                                  Tags=tags_to_apply,
-                                                  SolutionStackName=solution_stack_name,
-                                                  CNAMEPrefix=cname_prefix,
-                                                  Description=description,
-                                                  OptionSettings=option_settings,
-                                                  Tier={'Name': tier_name,
-                                                        'Type': tier_type[tier_name],
-                                                        'Version': '1.0'}))
+            aws_eb.create_environment(**filter_empty(ApplicationName=app_name,
+                                                     EnvironmentName=env_name,
+                                                     VersionLabel=version_label,
+                                                     TemplateName=template_name,
+                                                     Tags=tags_to_apply,
+                                                     SolutionStackName=solution_stack_name,
+                                                     CNAMEPrefix=cname_prefix,
+                                                     Description=description,
+                                                     OptionSettings=option_settings,
+                                                     Tier={'Name': tier_name,
+                                                           'Type': tier_type[tier_name],
+                                                           'Version': '1.0'}))
 
-            env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
+            env = wait_for(aws_eb, app_name, env_name, wait_timeout, status_is_ready)
             result = dict(changed=True, env=env)
         except ClientError as error:
             if 'Environment %s already exists' % env_name in str(error):
@@ -393,17 +393,16 @@ def main():
 
     if update:
         try:
-            env = describe_env(ebs, app_name, env_name, [])
-            updates = update_required(ebs, env, module.params)
+            env = describe_env(aws_eb, app_name, env_name, [])
+            updates = update_required(aws_eb, env, module.params)
             if len(updates) > 0:
-                ebs.update_environment(**filter_empty(
-                    EnvironmentName=env_name,
-                    VersionLabel=version_label,
-                    TemplateName=template_name,
-                    Description=description,
-                    OptionSettings=option_settings))
+                aws_eb.update_environment(**filter_empty(EnvironmentName=env_name,
+                                                         VersionLabel=version_label,
+                                                         TemplateName=template_name,
+                                                         Description=description,
+                                                         OptionSettings=option_settings))
 
-                env = wait_for(ebs, app_name, env_name, wait_timeout,
+                env = wait_for(aws_eb, app_name, env_name, wait_timeout,
                                lambda environment: status_is_ready(environment) and version_is_updated(version_label,
                                                                                                        environment))
 
@@ -415,8 +414,8 @@ def main():
 
     if state == 'absent':
         try:
-            ebs.terminate_environment(EnvironmentName=env_name)
-            env = wait_for(ebs, app_name, env_name, wait_timeout, terminated)
+            aws_eb.terminate_environment(EnvironmentName=env_name)
+            env = wait_for(aws_eb, app_name, env_name, wait_timeout, terminated)
             result = dict(changed=True, env=env)
         except ClientError as error:
             if 'No Environment found for EnvironmentName = \'%s\'' % env_name in str(error):
