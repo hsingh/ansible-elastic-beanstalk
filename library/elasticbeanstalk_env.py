@@ -219,6 +219,13 @@ def describe_env(aws_eb, app_name, env_name, ignored_statuses):
     return envs if env_name is None else envs[0]
 
 
+def list_envs(aws_eb, app_name):
+    environment_names = []
+    result = aws_eb.describe_environments(ApplicationName=app_name, EnvironmentNames=environment_names)
+    envs = result["Environments"]
+    return envs
+
+
 def describe_env_config_settings(aws_eb, app_name, env_name):
     result = aws_eb.describe_configuration_settings(ApplicationName=app_name, EnvironmentName=env_name)
     envs = result["ConfigurationSettings"]
@@ -341,8 +348,10 @@ def main():
     }
 
     region, ec2_url, aws_connect_params = get_aws_connection_info(module, boto3=True)
+
     if not region:
         module.fail_json(msg='region must be specified')
+
     aws_eb = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
                         region=region, endpoint=ec2_url, **aws_connect_params)
 
@@ -351,8 +360,8 @@ def main():
 
     if state == 'list':
         try:
-            env = describe_env(aws_eb, app_name, env_name, [])
-            result = dict(changed=False, env=[] if env is None else env)
+            env = list_envs(aws_eb, app_name)
+            result = dict(changed=False, env=env)
         except ClientError as error:
             module.fail_json(msg=str(error), **camel_dict_to_snake_dict(error.response))
 
