@@ -163,28 +163,35 @@ def main():
     description = module.params['description']
     state = module.params['state']
     delete_source = module.params['delete_source']
+    s3_bucket = module.params['s3_bucket']
+    s3_key = module.params['s3_key']
 
     region, ec2_url, aws_connect_params = get_aws_connection_info(module, boto3=True)
 
     if not region:
         module.fail_json(msg='region must be specified')
 
+    if app_name is None or app_name == '':
+        module.fail_json(msg='app_name is required')
+
     aws_eb = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
                         region=region, endpoint=ec2_url, **aws_connect_params)
 
-    if version_label is None:
-        if state != 'list':
-            module.fail_json(msg='Module parameter "version_label" is required if "state" is not "list"')
+    if version_label is None and state != 'list':
+        module.fail_json(msg='Module parameter "version_label" is required if "state" is not "list"')
 
-    if module.params['s3_bucket'] is None and module.params['s3_key'] is None:
-        if state == 'present':
-            module.fail_json(msg='Module parameter "s3_bucket" and "s3_key" is required if "state" is "present"')
+    if s3_bucket is None and s3_key is None and state == 'present':
+        module.fail_json(msg='Module parameter "s3_bucket" and "s3_key" is required if "state" is "present"')
 
-    s3_bucket = None if module.params['s3_bucket'] is None else module.params['s3_bucket']
-
-    s3_key = None if module.params['s3_key'] is None else module.params['s3_key']
-
-    version = describe_version(aws_eb, app_name, version_label)
+    if state != 'list':
+        try:
+            version = describe_version(aws_eb, app_name, version_label)
+        except ApplicationVersionNotFound:
+            version = None
+        except MoreThanOneApplicationVersionFound as error:
+            module.fail_json(msg=error.message)
+    else:
+        version = list_versions(aws_eb, app_name)
 
     if module.check_mode and state != 'list':
         check_version(version, module)
