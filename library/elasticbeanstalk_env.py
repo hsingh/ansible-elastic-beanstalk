@@ -162,6 +162,27 @@ output:
 '''
 
 
+class EnvironmentNotFound(Exception):
+    def __init__(self, env_name):
+        self.message = f"An environment with the name {env_name} was not found."
+
+
+class MoreThanOneEnvironmentFound(Exception):
+    def __init__(self, env_name):
+        self.message = f"More than one environment with the name {env_name} was found."
+
+
+class EnvironmentConfigurationNotFound(Exception):
+    def __init__(self, env_name):
+        self.message = f"An environment configuration for the environment with the name {env_name} was not found."
+
+
+class MoreThanOneEnvironmentConfigurationFound(Exception):
+    def __init__(self, env_name):
+        self.message = f"More than one environment configuration for the environment with the name {env_name} was" \
+                       f" found."
+
+
 def wait_for(aws_eb, app_name, env_name, wait_timeout, testfunc):
     timeout_time = time() + wait_timeout
 
@@ -201,22 +222,22 @@ def terminated(env):
 
 
 def describe_env(aws_eb, app_name, env_name, ignored_statuses):
-    environment_names = [] if env_name is None else [env_name]
+    environment_names = [env_name]
 
     result = aws_eb.describe_environments(ApplicationName=app_name, EnvironmentNames=environment_names)
     envs = result["Environments"]
 
-    if not isinstance(envs, list):
-        return None
-
-    for env in envs:
-        if "Status" in env and env["Status"] in ignored_statuses:
-            envs.remove(env)
+    if len(envs) > 1:
+        for env in envs:
+            if "Status" in env and env["Status"] in ignored_statuses:
+                envs.remove(env)
+        if len(envs) > 1:
+            raise MoreThanOneEnvironmentFound(env_name)
 
     if len(envs) == 0:
-        return None
+        raise EnvironmentNotFound(env_name)
 
-    return envs if env_name is None else envs[0]
+    return envs[0]
 
 
 def list_envs(aws_eb, app_name):
@@ -230,20 +251,20 @@ def describe_env_config_settings(aws_eb, app_name, env_name):
     result = aws_eb.describe_configuration_settings(ApplicationName=app_name, EnvironmentName=env_name)
     envs = result["ConfigurationSettings"]
 
-    if not isinstance(envs, list):
-        return None
-
-    for env in envs:
-        if "Status" in env and env["Status"] in ["Terminated", "Terminating"]:
-            envs.remove(env)
+    if len(envs) > 1:
+        for env in envs:
+            if "Status" in env and env["Status"] in ["Terminated", "Terminating"]:
+                envs.remove(env)
+        if len(envs) > 1:
+            raise MoreThanOneEnvironmentConfigurationFound(env_name)
 
     if len(envs) == 0:
-        return None
+        raise EnvironmentConfigurationNotFound(env_name)
 
-    return envs if env_name is None else envs[0]
+    return envs[0]
 
 
-def update_required(aws_eb, env, params):
+def update_required(env, env_settings, params):
     updates = []
     if 'VersionLabel' not in env:
         env['VersionLabel'] = None
@@ -255,10 +276,7 @@ def update_required(aws_eb, env, params):
     elif "TemplateName" in env and env["TemplateName"] != params["template_name"]:
         updates.append(('TemplateName', env['TemplateName'], params['template_name']))
 
-    result = aws_eb.describe_configuration_settings(ApplicationName=params["app_name"],
-                                                    EnvironmentName=params["env_name"])
-
-    options = result["ConfigurationSettings"][0]["OptionSettings"]
+    options = env_settings["ConfigurationSettings"][0]["OptionSettings"]
 
     for setting in params["option_settings"]:
         change = new_or_changed_option(options, setting)
@@ -284,16 +302,15 @@ def new_or_changed_option(options, setting):
     return f"{setting['Namespace']}:{setting['OptionName']}", '<NEW>', setting['Value']
 
 
-def check_env(aws_eb, app_name, env_name, module):
+def check_env(env, env_settings, module):
     state = module.params['state']
-    env = describe_env(aws_eb, app_name, env_name, ["Terminated", "Terminating"])
 
     result = {}
 
     if state == 'present' and env is None:
         result = dict(changed=True, output="Environment would be created")
     elif state == 'present' and env is not None:
-        updates = update_required(aws_eb, env, module.params)
+        updates = update_required(env, env_settings, module.params)
         if len(updates) > 0:
             result = dict(changed=True, output="Environment would be updated", env=env, updates=updates)
         else:
@@ -355,81 +372,99 @@ def main():
     aws_eb = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
                         region=region, endpoint=ec2_url, **aws_connect_params)
 
-    update = False
-    result = {}
-
     if state == 'list':
         try:
-            env = list_envs(aws_eb, app_name)
-            result = dict(changed=False, env=env)
+            envs = list_envs(aws_eb, app_name)
+            result = dict(changed=False, env=envs)
         except ClientError as error:
             module.fail_json(msg=str(error), **camel_dict_to_snake_dict(error.response))
-
-    if state == 'details':
+    elif state == 'details':
         try:
             env = describe_env_config_settings(aws_eb, app_name, env_name)
             result = dict(changed=False, env=env)
         except ClientError as error:
             module.fail_json(msg=str(error), **camel_dict_to_snake_dict(error.response))
-
-    if module.check_mode and (state != 'list' or state != 'details'):
-        check_env(aws_eb, app_name, env_name, module)
-        module.fail_json(msg='ASSERTION FAILURE: check_version() should not return control.')
-
-    if state == 'present':
+        except EnvironmentConfigurationNotFound:
+            result = dict(changed=False, output="Environment details not Found")
+        except MoreThanOneEnvironmentFound as error:
+            module.fail_json(msg=error.message)
+    else:
         try:
-            tags_to_apply = [{'Key': key, 'Value': value} for key, value in tags.items()]
-            aws_eb.create_environment(**filter_empty(ApplicationName=app_name,
-                                                     EnvironmentName=env_name,
-                                                     VersionLabel=version_label,
-                                                     TemplateName=template_name,
-                                                     Tags=tags_to_apply,
-                                                     SolutionStackName=solution_stack_name,
-                                                     CNAMEPrefix=cname_prefix,
-                                                     Description=description,
-                                                     OptionSettings=option_settings,
-                                                     Tier={'Name': tier_name,
-                                                           'Type': tier_type[tier_name],
-                                                           'Version': '1.0'}))
-
-            env = wait_for(aws_eb, app_name, env_name, wait_timeout, status_is_ready)
-            result = dict(changed=True, env=env)
-        except ClientError as error:
-            if 'Environment %s already exists' % env_name in str(error):
-                update = True
-            else:
-                module.fail_json(msg=str(error), **camel_dict_to_snake_dict(error.response))
-
-    if update:
-        try:
-            env = describe_env(aws_eb, app_name, env_name, [])
-            updates = update_required(aws_eb, env, module.params)
-            if len(updates) > 0:
-                aws_eb.update_environment(**filter_empty(EnvironmentName=env_name,
-                                                         VersionLabel=version_label,
-                                                         TemplateName=template_name,
-                                                         Description=description,
-                                                         OptionSettings=option_settings))
-
-                env = wait_for(aws_eb, app_name, env_name, wait_timeout,
-                               lambda environment: status_is_ready(environment) and version_is_updated(version_label,
-                                                                                                       environment))
-
-                result = dict(changed=True, env=env, updates=updates)
-            else:
-                result = dict(changed=False, env=env)
+            env = describe_env(aws_eb, app_name, env_name, ['Terminated', 'Terminating'])
         except ClientError as error:
             module.fail_json(msg=str(error), **camel_dict_to_snake_dict(error.response))
+        except EnvironmentNotFound:
+            env = None
+        except MoreThanOneEnvironmentFound as error:
+            module.fail_json(msg=error.message)
+
+        try:
+            env_settings = describe_env_config_settings(aws_eb, app_name, env_name)
+        except ClientError as error:
+            module.fail_json(msg=str(error), **camel_dict_to_snake_dict(error.response))
+        except EnvironmentConfigurationNotFound:
+            env_settings = None
+        except MoreThanOneEnvironmentConfigurationFound as error:
+            module.fail_json(msg=error.message)
+
+        if module.check_mode:
+            check_env(env, env_settings, module)
+            module.fail_json(msg='ASSERTION FAILURE: check_version() should not return control.')
+
+    if state == 'present':
+        if env is None:
+            try:
+                tags_to_apply = [{'Key': key, 'Value': value} for key, value in tags.items()]
+                aws_eb.create_environment(**filter_empty(ApplicationName=app_name,
+                                                         EnvironmentName=env_name,
+                                                         VersionLabel=version_label,
+                                                         TemplateName=template_name,
+                                                         Tags=tags_to_apply,
+                                                         SolutionStackName=solution_stack_name,
+                                                         CNAMEPrefix=cname_prefix,
+                                                         Description=description,
+                                                         OptionSettings=option_settings,
+                                                         Tier={'Name': tier_name,
+                                                               'Type': tier_type[tier_name],
+                                                               'Version': '1.0'}))
+
+                env = wait_for(aws_eb, app_name, env_name, wait_timeout, status_is_ready)
+                result = dict(changed=True, env=env)
+            except ClientError as error:
+                module.fail_json(msg=str(error), **camel_dict_to_snake_dict(error.response))
+        else:
+            try:
+                updates = update_required(env, env_settings, module.params)
+                if len(updates) > 0:
+                    aws_eb.update_environment(**filter_empty(EnvironmentName=env_name,
+                                                             VersionLabel=version_label,
+                                                             TemplateName=template_name,
+                                                             Description=description,
+                                                             OptionSettings=option_settings))
+
+                    env = wait_for(aws_eb,
+                                   app_name,
+                                   env_name,
+                                   wait_timeout,
+                                   lambda environment:
+                                   status_is_ready(environment) and version_is_updated(version_label,
+                                                                                       environment))
+
+                    result = dict(changed=True, env=env, updates=updates)
+                else:
+                    result = dict(changed=False, env=env)
+            except ClientError as error:
+                module.fail_json(msg=str(error), **camel_dict_to_snake_dict(error.response))
 
     if state == 'absent':
-        try:
-            aws_eb.terminate_environment(EnvironmentName=env_name)
-            env = wait_for(aws_eb, app_name, env_name, wait_timeout, terminated)
-            result = dict(changed=True, env=env)
-        except ClientError as error:
-            if 'No Environment found for EnvironmentName = \'%s\'' % env_name in str(error):
-                result = dict(changed=False, output='Environment not found')
-            else:
+        if env is None:
+            result = dict(changed=False, output='Environment not found')
+        else:
+            try:
+                aws_eb.terminate_environment(EnvironmentName=env_name)
+                env = wait_for(aws_eb, app_name, env_name, wait_timeout, terminated)
+                result = dict(changed=True, env=env)
+            except ClientError as error:
                 module.fail_json(msg=str(error), **camel_dict_to_snake_dict(error.response))
 
     module.exit_json(**result)
