@@ -333,12 +333,12 @@ def main():
     cname_prefix = module.params['cname_prefix']
     tags = module.params['tags']
     option_settings = module.params['option_settings']
-
-    tier_type = 'Standard'
     tier_name = module.params['tier_name']
 
-    if tier_name == 'Worker':
-        tier_type = 'SQS/HTTP'
+    tier_type = {
+        'WebServer': 'Standard',
+        'Worker': 'SQS/HTTP'
+    }
 
     region, ec2_url, aws_connect_params = get_aws_connection_info(module, boto3=True)
     if not region:
@@ -379,7 +379,9 @@ def main():
                                                   CNAMEPrefix=cname_prefix,
                                                   Description=description,
                                                   OptionSettings=option_settings,
-                                                  Tier={'Name': tier_name, 'Type': tier_type, 'Version': '1.0'}))
+                                                  Tier={'Name': tier_name,
+                                                        'Type': tier_type[tier_name],
+                                                        'Version': '1.0'}))
 
             env = wait_for(ebs, app_name, env_name, wait_timeout, status_is_ready)
             result = dict(changed=True, env=env)
