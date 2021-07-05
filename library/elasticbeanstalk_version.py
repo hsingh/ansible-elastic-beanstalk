@@ -3,18 +3,54 @@
 from ansible_collections.amazon.aws.plugins.module_utils.core import AnsibleAWSModule
 from ansible_collections.amazon.aws.plugins.module_utils.ec2 import boto3_conn, get_aws_connection_info
 
-DOCUMENTATION = '''--- module: elasticbeanstalk_version short_description: create, update, delete and list beanstalk 
-application versions description: - creates, updates, deletes beanstalk versions if both app_name and version_label 
-are provided. Can also list versions associated with application options: app_name: description: - name of the 
-beanstalk application you wish to manage the versions of required: true default: null version_label: description: - 
-label of the version you want create, update or delete required: false default: null s3_bucket: description: - name 
-of the S3 bucket which contains the version source bundle required: false default: null s3_key: description: - S3 key 
-where the source bundle is located. Both s3_bucket and s3_key must be specified in order to create a new version. 
-required: false default: null description: description: - describes the version required: false default: null 
-delete_source: description: - Set to true to delete the source bundle from your storage bucket. required: false 
-default: False state: description: - whether to ensure the version is present or absent, or to list existing versions 
-required: false default: present choices: ['absent','present','list'] author: Harpreet Singh 
-extends_documentation_fragment: aws '''
+DOCUMENTATION = '''
+---
+module: elasticbeanstalk_version
+short_description: create, update, delete and list beanstalk application versions
+description:
+  - creates, updates, deletes beanstalk versions if both app_name and version_label are provided.
+  - Can also list versions associated with application
+options:
+  app_name:
+    description:
+      - name of the beanstalk application you wish to manage the versions of
+    required: true
+    default: null
+  version_label:
+    description:
+      - label of the version you want create, update or delete
+    required: false
+    default: null
+  s3_bucket:
+    description:
+      - name of the S3 bucket which contains the version source bundle
+    required: false
+    default: null
+  s3_key:
+    description:
+      - S3 key where the source bundle is located.
+      - Both s3_bucket and s3_key must be specified in order to create a new version.
+    required: false
+    default: null
+  description:
+    description:
+      - describes the version
+    required: false
+    default: null
+  delete_source:
+    description:
+      - Set to true to delete the source bundle from your storage bucket.
+    required: false
+    default: False
+  state:
+    description:
+      - whether to ensure the version is present or absent, or to list existing versions
+    required: false
+    default: present
+    choices: ['absent','present','list']
+author: Harpreet Singh
+extends_documentation_fragment: aws
+'''
 
 EXAMPLES = '''
 # Create or update an application version
