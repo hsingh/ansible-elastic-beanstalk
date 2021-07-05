@@ -95,18 +95,29 @@ output:
 '''
 
 
+class ApplicationVersionNotFound(Exception):
+    def __init__(self, version_label):
+        self.message = f"Application version with label: {version_label} not found"
+
+
+class MoreThanOneApplicationVersionFound(Exception):
+    def __init__(self, version_label):
+        self.message = f"More than one application version returned using the term {version_label}," \
+                       f" please use a specific term."
+
+
 def describe_version(aws_eb, app_name, version_label):
-    versions = list_versions(aws_eb, app_name, version_label)
-
-    return None if len(versions) != 1 else versions[0]
-
-
-def list_versions(aws_eb, app_name, version_label):
-    if version_label is None:
-        versions = aws_eb.describe_application_versions(ApplicationName=app_name)
+    version = aws_eb.describe_application_versions(ApplicationName=app_name, VersionLabels=[version_label])
+    if len(version["ApplicationVersions"]) == 0:
+        raise ApplicationVersionNotFound(version_label)
+    elif len(version["ApplicationVersions"]) > 1:
+        raise MoreThanOneApplicationVersionFound(version_label)
     else:
-        versions = aws_eb.describe_application_versions(ApplicationName=app_name, VersionLabels=[version_label])
+        return version["ApplicationVersions"][0]
 
+
+def list_versions(aws_eb, app_name):
+    versions = aws_eb.describe_application_versions(ApplicationName=app_name)
     return versions["ApplicationVersions"]
 
 
@@ -153,6 +164,14 @@ def main():
     state = module.params['state']
     delete_source = module.params['delete_source']
 
+    region, ec2_url, aws_connect_params = get_aws_connection_info(module, boto3=True)
+
+    if not region:
+        module.fail_json(msg='region must be specified')
+
+    aws_eb = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
+                        region=region, endpoint=ec2_url, **aws_connect_params)
+
     if version_label is None:
         if state != 'list':
             module.fail_json(msg='Module parameter "version_label" is required if "state" is not "list"')
@@ -164,13 +183,6 @@ def main():
     s3_bucket = None if module.params['s3_bucket'] is None else module.params['s3_bucket']
 
     s3_key = None if module.params['s3_key'] is None else module.params['s3_key']
-
-    region, ec2_url, aws_connect_params = get_aws_connection_info(module, boto3=True)
-
-    if not region:
-        module.fail_json(msg='region must be specified')
-    aws_eb = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
-                     region=region, endpoint=ec2_url, **aws_connect_params)
 
     version = describe_version(aws_eb, app_name, version_label)
 
@@ -189,8 +201,8 @@ def main():
         else:
             if version.get("Description", None) != description:
                 aws_eb.update_application_version(ApplicationName=app_name,
-                                               VersionLabel=version_label,
-                                               Description='' if description is None else description)
+                                                  VersionLabel=version_label,
+                                                  Description='' if description is None else description)
                 version = describe_version(aws_eb, app_name, version_label)
 
                 result = dict(changed=True, version=version)
@@ -202,12 +214,12 @@ def main():
             result = dict(changed=False, output='Version not found')
         else:
             aws_eb.delete_application_version(ApplicationName=app_name,
-                                           VersionLabel=version_label,
-                                           DeleteSourceBundle=delete_source)
+                                              VersionLabel=version_label,
+                                              DeleteSourceBundle=delete_source)
             result = dict(changed=True, version=version)
 
     else:
-        versions = list_versions(aws_eb, app_name, version_label)
+        versions = list_versions(aws_eb, app_name)
         result = dict(changed=False, versions=versions)
 
     module.exit_json(**result)
