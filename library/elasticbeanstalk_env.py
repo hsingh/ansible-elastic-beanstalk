@@ -25,7 +25,7 @@ options:
       - The name can contain only letters, numbers, and hyphens.
       - It cannot start or end with a hyphen.
       - This name must be unique in your account.
-    required: true
+    required: false
     default: null
   version_label:
     description:
@@ -78,7 +78,8 @@ options:
     description:
       - name of the tier
     required: false
-    default: WebServer choices: ['WebServer', 'Worker']
+    default: WebServer
+    choices: ['WebServer', 'Worker']
   state:
     description:
       - whether to ensure the environment is present or absent, or to list existing environments
@@ -315,7 +316,6 @@ def main():
         cname_prefix=dict(type='str', required=False),
         option_settings=dict(type='list', default=[]),
         tags=dict(type='dict', default=dict()),
-        options_to_remove=dict(type='list', default=[]),
         tier_name=dict(default='WebServer', choices=['WebServer', 'Worker'])
     )
     module = AnsibleAWSModule(argument_spec=argument_spec,
