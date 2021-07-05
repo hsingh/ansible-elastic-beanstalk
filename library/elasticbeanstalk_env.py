@@ -324,7 +324,10 @@ def check_env(env, env_settings, module):
 
 
 def filter_empty(**kwargs):
-    return {key: value for key, value in kwargs.items() if value}
+    result = {}
+    for key, value in kwargs.items():
+        result.update({key: value})
+    return result
 
 
 def main():
