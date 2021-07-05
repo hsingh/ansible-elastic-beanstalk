@@ -1,14 +1,7 @@
 #!/usr/bin/python
 
-from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.ec2 import boto3_conn, ec2_argument_spec, get_aws_connection_info
-
-try:
-    import boto3
-
-    HAS_BOTO3 = True
-except ImportError:
-    HAS_BOTO3 = False
+from ansible_collections.amazon.aws.plugins.module_utils.core import AnsibleAWSModule
+from ansible_collections.amazon.aws.plugins.module_utils.ec2 import boto3_conn, get_aws_connection_info
 
 DOCUMENTATION = '''--- module: elasticbeanstalk_version short_description: create, update, delete and list beanstalk 
 application versions description: - creates, updates, deletes beanstalk versions if both app_name and version_label 
@@ -142,8 +135,7 @@ def filter_empty(**kwargs):
 
 
 def main():
-    argument_spec = ec2_argument_spec()
-    argument_spec.update(dict(
+    argument_spec = dict(
         app_name=dict(type='str', required=True),
         version_label=dict(type='str', required=False),
         s3_bucket=dict(type='str', required=False),
@@ -151,12 +143,9 @@ def main():
         description=dict(type='str', required=False),
         delete_source=dict(type='bool', default=False),
         state=dict(choices=['present', 'absent', 'list'], default='present')
-    ),
     )
-    module = AnsibleModule(argument_spec=argument_spec, supports_check_mode=True)
 
-    if not HAS_BOTO3:
-        module.fail_json(msg='boto3 required for this module')
+    module = AnsibleAWSModule(argument_spec=argument_spec, supports_check_mode=True)
 
     app_name = module.params['app_name']
     version_label = module.params['version_label']
