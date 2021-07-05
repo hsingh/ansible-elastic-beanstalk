@@ -1,16 +1,10 @@
 #!/usr/bin/python
 
-from builtins import str
-from ansible.module_utils.basic import *
-from ansible.module_utils.ec2 import boto3_conn, ec2_argument_spec, get_aws_connection_info, camel_dict_to_snake_dict
+from time import time, sleep
+from ansible_collections.amazon.aws.plugins.module_utils.core import AnsibleAWSModule
+from ansible_collections.amazon.aws.plugins.module_utils.ec2 import boto3_conn, get_aws_connection_info, \
+    camel_dict_to_snake_dict
 from botocore.exceptions import ClientError
-
-try:
-    import boto3
-
-    HAS_BOTO3 = True
-except ImportError:
-    HAS_BOTO3 = False
 
 DOCUMENTATION = '''--- module: elasticbeanstalk_env short_description: create, update, delete beanstalk application 
 environments description: - creates, updates, deletes beanstalk environments. options: app_name: description: - name 
@@ -110,7 +104,7 @@ output:
 
 
 def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
-    timeout_time = time.time() + wait_timeout
+    timeout_time = time() + wait_timeout
 
     while True:
         try:
@@ -121,10 +115,10 @@ def wait_for(ebs, app_name, env_name, wait_timeout, testfunc):
         if testfunc(env):
             return env
 
-        if time.time() > timeout_time:
+        if time() > timeout_time:
             raise ValueError("The timeout has expired")
 
-        time.sleep(15)
+        sleep(15)
 
 
 def version_is_updated(version_label, env):
@@ -251,8 +245,7 @@ def filter_empty(**kwargs):
 
 
 def main():
-    argument_spec = ec2_argument_spec()
-    argument_spec.update(dict(
+    argument_spec = dict(
         app_name=dict(type='str', required=True),
         env_name=dict(type='str', required=False),
         version_label=dict(type='str', required=False),
@@ -266,14 +259,10 @@ def main():
         tags=dict(type='dict', default=dict()),
         options_to_remove=dict(type='list', default=[]),
         tier_name=dict(default='WebServer', choices=['WebServer', 'Worker'])
-    ),
     )
-    module = AnsibleModule(argument_spec=argument_spec,
-                           mutually_exclusive=[['solution_stack_name', 'template_name']],
-                           supports_check_mode=True)
-
-    if not HAS_BOTO3:
-        module.fail_json(msg='boto3 required for this module')
+    module = AnsibleAWSModule(argument_spec=argument_spec,
+                              mutually_exclusive=[['solution_stack_name', 'template_name']],
+                              supports_check_mode=True)
 
     app_name = module.params['app_name']
     env_name = module.params['env_name']
@@ -373,7 +362,7 @@ def main():
             if 'No Environment found for EnvironmentName = \'%s\'' % env_name in str(error):
                 result = dict(changed=False, output='Environment not found')
             else:
-                module.fail_json(msg=str(error), **camel_dict_to_snake_dict(e.response))
+                module.fail_json(msg=str(error), **camel_dict_to_snake_dict(error.response))
 
     module.exit_json(**result)
 
