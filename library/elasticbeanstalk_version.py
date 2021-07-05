@@ -95,17 +95,17 @@ output:
 '''
 
 
-def describe_version(ebs, app_name, version_label):
-    versions = list_versions(ebs, app_name, version_label)
+def describe_version(aws_eb, app_name, version_label):
+    versions = list_versions(aws_eb, app_name, version_label)
 
     return None if len(versions) != 1 else versions[0]
 
 
-def list_versions(ebs, app_name, version_label):
+def list_versions(aws_eb, app_name, version_label):
     if version_label is None:
-        versions = ebs.describe_application_versions(ApplicationName=app_name)
+        versions = aws_eb.describe_application_versions(ApplicationName=app_name)
     else:
-        versions = ebs.describe_application_versions(ApplicationName=app_name, VersionLabels=[version_label])
+        versions = aws_eb.describe_application_versions(ApplicationName=app_name, VersionLabels=[version_label])
 
     return versions["ApplicationVersions"]
 
@@ -169,10 +169,10 @@ def main():
 
     if not region:
         module.fail_json(msg='region must be specified')
-    ebs = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
+    aws_eb = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
                      region=region, endpoint=ec2_url, **aws_connect_params)
 
-    version = describe_version(ebs, app_name, version_label)
+    version = describe_version(aws_eb, app_name, version_label)
 
     if module.check_mode and state != 'list':
         check_version(version, module)
@@ -180,18 +180,18 @@ def main():
 
     if state == 'present':
         if version is None:
-            ebs.create_application_version(
+            aws_eb.create_application_version(
                 **filter_empty(ApplicationName=app_name, VersionLabel=version_label, Description=description,
                                SourceBundle={'S3Bucket': s3_bucket, 'S3Key': s3_key}))
-            version = describe_version(ebs, app_name, version_label)
+            version = describe_version(aws_eb, app_name, version_label)
 
             result = dict(changed=True, version=version)
         else:
             if version.get("Description", None) != description:
-                ebs.update_application_version(ApplicationName=app_name,
+                aws_eb.update_application_version(ApplicationName=app_name,
                                                VersionLabel=version_label,
                                                Description='' if description is None else description)
-                version = describe_version(ebs, app_name, version_label)
+                version = describe_version(aws_eb, app_name, version_label)
 
                 result = dict(changed=True, version=version)
             else:
@@ -201,13 +201,13 @@ def main():
         if version is None:
             result = dict(changed=False, output='Version not found')
         else:
-            ebs.delete_application_version(ApplicationName=app_name,
+            aws_eb.delete_application_version(ApplicationName=app_name,
                                            VersionLabel=version_label,
                                            DeleteSourceBundle=delete_source)
             result = dict(changed=True, version=version)
 
     else:
-        versions = list_versions(ebs, app_name, version_label)
+        versions = list_versions(aws_eb, app_name, version_label)
         result = dict(changed=False, versions=versions)
 
     module.exit_json(**result)
