@@ -203,9 +203,11 @@ def main():
 
     if state == 'present':
         if version is None:
-            aws_eb.create_application_version(
-                **filter_empty(ApplicationName=app_name, VersionLabel=version_label, Description=description,
-                               SourceBundle={'S3Bucket': s3_bucket, 'S3Key': s3_key}))
+            aws_eb.create_application_version(**filter_empty(ApplicationName=app_name,
+                                                             VersionLabel=version_label,
+                                                             Description=description,
+                                                             SourceBundle={'S3Bucket': s3_bucket,
+                                                                           'S3Key': s3_key}))
             version = describe_version(aws_eb, app_name, version_label)
 
             result = dict(changed=True, version=version)
@@ -230,8 +232,7 @@ def main():
             result = dict(changed=True, version=version)
 
     else:
-        versions = list_versions(aws_eb, app_name)
-        result = dict(changed=False, versions=versions)
+        result = dict(changed=False, versions=version)
 
     module.exit_json(**result)
 
