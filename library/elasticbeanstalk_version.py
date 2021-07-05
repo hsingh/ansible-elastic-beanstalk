@@ -142,7 +142,11 @@ def check_version(version, module):
 
 
 def filter_empty(**kwargs):
-    return {key: value for key, value in kwargs.items() if value}
+    result = {}
+    for key, value in kwargs.items():
+        if value is not None:
+            result.update({key: value})
+    return result
 
 
 def main():
