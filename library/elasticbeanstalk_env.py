@@ -6,27 +6,85 @@ from ansible_collections.amazon.aws.plugins.module_utils.ec2 import boto3_conn, 
     camel_dict_to_snake_dict
 from botocore.exceptions import ClientError
 
-DOCUMENTATION = '''--- module: elasticbeanstalk_env short_description: create, update, delete beanstalk application 
-environments description: - creates, updates, deletes beanstalk environments. options: app_name: description: - name 
-of the beanstalk application you wish to manage the versions of required: true default: null env_name: description: - 
-unique name for the deployment environment. Must be from 4 to 40 characters in length. The name can contain only 
-letters, numbers, and hyphens. It cannot start or end with a hyphen. This name must be unique in your account. 
-required: true default: null version_label: description: - label of the version you want to deploy in the environment 
-required: false default: null description: description: - describes this environment required: false default: null 
-wait_timeout: description: - Number of seconds to wait for an environment to change state. required: false default: 
-900 template_name: description: - name of the configuration template to use in deployment. You must specify either 
-this parameter or a solution_stack_name required: false default: null solution_stack_name: description: - this is an 
-alternative to specifying a template_name. You must specify either this or a template_name, but not both required: 
-false default: null cname_prefix: description: - if specified, the environment attempts to use this value as the 
-prefix for the CNAME. If not specified, the environment uses the environment name. required: false default: null 
-option_settings: description: - 'A dictionary array of settings to add of the form: { Namespace: ..., OptionName: ... 
-, Value: ... }. If specified, AWS Elastic Beanstalk sets the specified configuration options to the requested value 
-in the configuration set for the new environment. These override the values obtained from the solution stack or the 
-configuration template' required: false default: null tags: description: - A dictionary of Key/Value tags to apply to 
-the environment on creation. Tags cannot be modified once the environment is created. required: false default: null 
-tier_name: description: - name of the tier required: false default: WebServer choices: ['WebServer', 'Worker'] state: 
-description: - whether to ensure the environment is present or absent, or to list existing environments required: 
-false default: present choices: ['absent','present','list','details'] 
+DOCUMENTATION = '''
+---
+module: elasticbeanstalk_env
+short_description: create, update, delete beanstalk application environments
+description:
+  - creates, updates, deletes beanstalk environments.
+options:
+  app_name:
+    description:
+      - name of the beanstalk application you wish to manage the versions of
+    required: true
+    default: null
+  env_name:
+    description:
+      - unique name for the deployment environment.
+      - Must be from 4 to 40 characters in length.
+      - The name can contain only letters, numbers, and hyphens.
+      - It cannot start or end with a hyphen.
+      - This name must be unique in your account.
+    required: true
+    default: null
+  version_label:
+    description:
+      - label of the version you want to deploy in the environment
+    required: false
+    default: null
+  description:
+    description:
+      - describes this environment
+    required: false
+    default: null
+  wait_timeout:
+    description:
+      - Number of seconds to wait for an environment to change state.
+    required: false
+    default: 900
+  template_name:
+    description:
+      - name of the configuration template to use in deployment.
+      - You must specify either this parameter or a solution_stack_name
+    required: false
+    default: null
+  solution_stack_name:
+    description:
+      - this is an alternative to specifying a template_name.
+      - You must specify either this or a template_name, but not both
+    required: false
+    default: null
+  cname_prefix:
+    description:
+      - if specified, the environment attempts to use this value as the prefix for the CNAME.
+      - If not specified, the environment uses the environment name.
+    required: false
+    default: null
+  option_settings:
+    description:
+      - A dictionary array of settings to add of the form: { Namespace: ..., OptionName: ..., Value: ... }.
+      - If specified, Elastic Beanstalk sets the specified configuration options to the requested value in the
+      - configuration set for the new environment.
+      - These override the values obtained from the solution stack or the configuration template'
+    required: false
+    default: null
+  tags:
+    description:
+      - A dictionary of Key/Value tags to apply to the environment on creation.
+      - Tags cannot be modified once the environment is created.
+    required: false
+    default: null
+  tier_name:
+    description:
+      - name of the tier
+    required: false
+    default: WebServer choices: ['WebServer', 'Worker']
+  state:
+    description:
+      - whether to ensure the environment is present or absent, or to list existing environments
+    required: false
+    default: present
+    choices: ['absent','present','list','details'] 
 
 author: Harpreet Singh
 extends_documentation_fragment: aws
