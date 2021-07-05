@@ -268,10 +268,10 @@ def update_required(env, env_settings, params):
     updates = []
     if 'VersionLabel' not in env:
         env['VersionLabel'] = None
-    if params["version_label"] and env["VersionLabel"] != params["version_label"]:
+    if "version_label" in params and env["VersionLabel"] != params["version_label"]:
         updates.append(('VersionLabel', env['VersionLabel'], params['version_label']))
 
-    if params.get("template_name", None) and not ("TemplateName" in env):
+    if "template_name" in params and "TemplateName" not in env:
         updates.append(('TemplateName', None, params['template_name']))
     elif "TemplateName" in env and env["TemplateName"] != params["template_name"]:
         updates.append(('TemplateName', env['TemplateName'], params['template_name']))
@@ -290,10 +290,14 @@ def new_or_changed_option(options, setting):
     for option in options:
         if option["Namespace"] == setting["Namespace"] and option["OptionName"] == setting["OptionName"]:
 
-            if ((setting['Namespace'] in ['aws:autoscaling:launchconfiguration', 'aws:ec2:vpc'] and
-                 setting['OptionName'] in ['SecurityGroups', 'ELBSubnets', 'Subnets'] and
-                 set(setting['Value'].split(',')).issubset(setting['Value'].split(','))) or
-                    ('Value' in option and option["Value"] == setting["Value"])):
+            check_namespace = setting['Namespace'] in ['aws:autoscaling:launchconfiguration', 'aws:ec2:vpc']
+            check_option_name = setting['OptionName'] in ['SecurityGroups', 'ELBSubnets', 'Subnets']
+            set_setting = set([] if "Value" not in setting else setting['Value'].split(','))
+            set_option = set([] if "Value" not in option else option['Value'].split(','))
+            check_setting_values = set_setting.issubset(set_option)
+            compare_option_setting = 'Value' in option and option["Value"] == setting["Value"]
+
+            if check_namespace and check_option_name and check_setting_values or compare_option_setting:
                 return None
             else:
                 if 'Value' in option:
