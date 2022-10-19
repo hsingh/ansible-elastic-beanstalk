@@ -1,27 +1,56 @@
 #!/usr/bin/python
 
-from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.ec2 import boto3_conn, ec2_argument_spec, get_aws_connection_info
+from ansible_collections.amazon.aws.plugins.module_utils.core import AnsibleAWSModule
+from ansible_collections.amazon.aws.plugins.module_utils.ec2 import boto3_conn, get_aws_connection_info
 
-try:
-    import boto3
-
-    HAS_BOTO3 = True
-except ImportError:
-    HAS_BOTO3 = False
-
-DOCUMENTATION = '''--- module: elasticbeanstalk_version short_description: create, update, delete and list beanstalk 
-application versions description: - creates, updates, deletes beanstalk versions if both app_name and version_label 
-are provided. Can also list versions associated with application options: app_name: description: - name of the 
-beanstalk application you wish to manage the versions of required: true default: null version_label: description: - 
-label of the version you want create, update or delete required: false default: null s3_bucket: description: - name 
-of the S3 bucket which contains the version source bundle required: false default: null s3_key: description: - S3 key 
-where the source bundle is located. Both s3_bucket and s3_key must be specified in order to create a new version. 
-required: false default: null description: description: - describes the version required: false default: null 
-delete_source: description: - Set to true to delete the source bundle from your storage bucket. required: false 
-default: False state: description: - whether to ensure the version is present or absent, or to list existing versions 
-required: false default: present choices: ['absent','present','list'] author: Harpreet Singh 
-extends_documentation_fragment: aws '''
+DOCUMENTATION = '''
+---
+module: elasticbeanstalk_version
+short_description: create, update, delete and list beanstalk application versions
+description:
+  - creates, updates, deletes beanstalk versions if both app_name and version_label are provided.
+  - Can also list versions associated with application
+options:
+  app_name:
+    description:
+      - name of the beanstalk application you wish to manage the versions of
+    required: true
+    default: null
+  version_label:
+    description:
+      - label of the version you want create, update or delete
+    required: false
+    default: null
+  s3_bucket:
+    description:
+      - name of the S3 bucket which contains the version source bundle
+    required: false
+    default: null
+  s3_key:
+    description:
+      - S3 key where the source bundle is located.
+      - Both s3_bucket and s3_key must be specified in order to create a new version.
+    required: false
+    default: null
+  description:
+    description:
+      - describes the version
+    required: false
+    default: null
+  delete_source:
+    description:
+      - Set to true to delete the source bundle from your storage bucket.
+    required: false
+    default: False
+  state:
+    description:
+      - whether to ensure the version is present or absent, or to list existing versions
+    required: false
+    default: present
+    choices: ['absent','present','list']
+author: Harpreet Singh
+extends_documentation_fragment: aws
+'''
 
 EXAMPLES = '''
 # Create or update an application version
@@ -102,18 +131,29 @@ output:
 '''
 
 
-def describe_version(ebs, app_name, version_label):
-    versions = list_versions(ebs, app_name, version_label)
+class ApplicationVersionNotFound(Exception):
+    def __init__(self, version_label):
+        self.message = f"Application version with label: {version_label} not found"
 
-    return None if len(versions) != 1 else versions[0]
+
+class MoreThanOneApplicationVersionFound(Exception):
+    def __init__(self, version_label):
+        self.message = f"More than one application version returned using the term {version_label}," \
+                       f" please use a specific term."
 
 
-def list_versions(ebs, app_name, version_label):
-    if version_label is None:
-        versions = ebs.describe_application_versions(ApplicationName=app_name)
+def describe_version(aws_eb, app_name, version_label):
+    version = aws_eb.describe_application_versions(ApplicationName=app_name, VersionLabels=[version_label])
+    if len(version["ApplicationVersions"]) == 0:
+        raise ApplicationVersionNotFound(version_label)
+    elif len(version["ApplicationVersions"]) > 1:
+        raise MoreThanOneApplicationVersionFound(version_label)
     else:
-        versions = ebs.describe_application_versions(ApplicationName=app_name, VersionLabels=[version_label])
+        return version["ApplicationVersions"][0]
 
+
+def list_versions(aws_eb, app_name):
+    versions = aws_eb.describe_application_versions(ApplicationName=app_name)
     return versions["ApplicationVersions"]
 
 
@@ -138,12 +178,15 @@ def check_version(version, module):
 
 
 def filter_empty(**kwargs):
-    return {key: value for key, value in kwargs.items() if value}
+    result = {}
+    for key, value in kwargs.items():
+        if value is not None:
+            result.update({key: value})
+    return result
 
 
 def main():
-    argument_spec = ec2_argument_spec()
-    argument_spec.update(dict(
+    argument_spec = dict(
         app_name=dict(type='str', required=True),
         version_label=dict(type='str', required=False),
         s3_bucket=dict(type='str', required=False),
@@ -151,39 +194,44 @@ def main():
         description=dict(type='str', required=False),
         delete_source=dict(type='bool', default=False),
         state=dict(choices=['present', 'absent', 'list'], default='present')
-    ),
     )
-    module = AnsibleModule(argument_spec=argument_spec, supports_check_mode=True)
 
-    if not HAS_BOTO3:
-        module.fail_json(msg='boto3 required for this module')
+    module = AnsibleAWSModule(argument_spec=argument_spec, supports_check_mode=True)
 
     app_name = module.params['app_name']
     version_label = module.params['version_label']
     description = module.params['description']
     state = module.params['state']
     delete_source = module.params['delete_source']
-
-    if version_label is None:
-        if state != 'list':
-            module.fail_json(msg='Module parameter "version_label" is required if "state" is not "list"')
-
-    if module.params['s3_bucket'] is None and module.params['s3_key'] is None:
-        if state == 'present':
-            module.fail_json(msg='Module parameter "s3_bucket" and "s3_key" is required if "state" is "present"')
-
-    s3_bucket = None if module.params['s3_bucket'] is None else module.params['s3_bucket']
-
-    s3_key = None if module.params['s3_key'] is None else module.params['s3_key']
+    s3_bucket = module.params['s3_bucket']
+    s3_key = module.params['s3_key']
 
     region, ec2_url, aws_connect_params = get_aws_connection_info(module, boto3=True)
 
     if not region:
         module.fail_json(msg='region must be specified')
-    ebs = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
-                     region=region, endpoint=ec2_url, **aws_connect_params)
 
-    version = describe_version(ebs, app_name, version_label)
+    if app_name is None or app_name == '':
+        module.fail_json(msg='app_name is required')
+
+    aws_eb = boto3_conn(module, conn_type='client', resource='elasticbeanstalk',
+                        region=region, endpoint=ec2_url, **aws_connect_params)
+
+    if version_label is None and state != 'list':
+        module.fail_json(msg='Module parameter "version_label" is required if "state" is not "list"')
+
+    if s3_bucket is None and s3_key is None and state == 'present':
+        module.fail_json(msg='Module parameter "s3_bucket" and "s3_key" is required if "state" is "present"')
+
+    if state != 'list':
+        try:
+            version = describe_version(aws_eb, app_name, version_label)
+        except ApplicationVersionNotFound:
+            version = None
+        except MoreThanOneApplicationVersionFound as error:
+            module.fail_json(msg=error.message)
+    else:
+        version = list_versions(aws_eb, app_name)
 
     if module.check_mode and state != 'list':
         check_version(version, module)
@@ -191,18 +239,20 @@ def main():
 
     if state == 'present':
         if version is None:
-            ebs.create_application_version(
-                **filter_empty(ApplicationName=app_name, VersionLabel=version_label, Description=description,
-                               SourceBundle={'S3Bucket': s3_bucket, 'S3Key': s3_key}))
-            version = describe_version(ebs, app_name, version_label)
+            aws_eb.create_application_version(**filter_empty(ApplicationName=app_name,
+                                                             VersionLabel=version_label,
+                                                             Description=description,
+                                                             SourceBundle={'S3Bucket': s3_bucket,
+                                                                           'S3Key': s3_key}))
+            version = describe_version(aws_eb, app_name, version_label)
 
             result = dict(changed=True, version=version)
         else:
             if version.get("Description", None) != description:
-                ebs.update_application_version(ApplicationName=app_name,
-                                               VersionLabel=version_label,
-                                               Description='' if description is None else description)
-                version = describe_version(ebs, app_name, version_label)
+                aws_eb.update_application_version(ApplicationName=app_name,
+                                                  VersionLabel=version_label,
+                                                  Description='' if description is None else description)
+                version = describe_version(aws_eb, app_name, version_label)
 
                 result = dict(changed=True, version=version)
             else:
@@ -212,14 +262,13 @@ def main():
         if version is None:
             result = dict(changed=False, output='Version not found')
         else:
-            ebs.delete_application_version(ApplicationName=app_name,
-                                           VersionLabel=version_label,
-                                           DeleteSourceBundle=delete_source)
+            aws_eb.delete_application_version(ApplicationName=app_name,
+                                              VersionLabel=version_label,
+                                              DeleteSourceBundle=delete_source)
             result = dict(changed=True, version=version)
 
     else:
-        versions = list_versions(ebs, app_name, version_label)
-        result = dict(changed=False, versions=versions)
+        result = dict(changed=False, versions=version)
 
     module.exit_json(**result)
 
