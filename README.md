@@ -49,7 +49,7 @@ The example playbook demonstrates how to create an application and version and u
         register: version
 
 
-      - name: Create appo
+      - name: Update application version on environment
         elasticbeanstalk_env:
           region: us-east-1
           app_name: Sample App

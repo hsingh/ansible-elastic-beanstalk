@@ -1,0 +1,16 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+ipython = "*"
+
+[packages]
+ansible = "==4.2.0"
+boto = ">=2.49.0"
+botocore = ">=1.12.249"
+boto3 = ">=1.9.249"
+
+[requires]
+python_version = "3.8"
